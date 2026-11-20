@@ -18,6 +18,8 @@ SHELLS_HEAT=rule (gen only): node heat flow from shells_grid.heat_from_history (
        HFgrid14.grd packed along, control of E-1120-06)
 SHELLS_DIP_FLIP=OSR,CRB (gen only): these boundary classes get the reversed dip direction (E-1120-05)
 SHELLS_DIP_RULE=elev (gen only): CCB and OCB faults dip toward the higher side (shells_grid.toward_higher, E-1120-06)
+SHELLS_RESID=1 (gen only): basal drag = our slab flow + per-plate residual poles, the planet's method (E-1119-14, hcnoslab;
+       PLATE_PLAN section 6 step 2), instead of the authors' 4 inversion iterations against PB2002 velocities; one step
 SHELLS_TAG=x: appended to the output names, so variants of one mode can be told apart
 SHELLS_SMOKE=1: the first model only, 1 iteration, 2 MPI ranks (a few minutes; checks that the grid is read and run).
 Writes results/shells_feg_<mode>.json (grid counts, scores, the authors' reference scores) and results/shells_feg_<mode>_shellsF.zip
@@ -65,7 +67,11 @@ def main():
         summary["gen"] = g = sg.earth_grid(f"{S}/INPUT", STEPS, f"{S}/generated", REFINE, OWN, HEAT_RULE, FLIP, DIP_ELEV, WEAK)
         summary["refine"], summary["own_nodedata"], summary["heat_rule"], summary["flip"] = REFINE, OWN, HEAT_RULE, FLIP
         summary["dip_elev"], summary["weak_orogens"], summary["scan"] = DIP_ELEV, WEAK, SCAN
+        summary["resid"] = se.RESID
         os.system(f"cp {S}/generated/* {S}/INPUT/")
+        if se.RESID:
+            _, summary["flow"], (out, vf, vplate) = se.hc_flow()
+            flow_fn, summary["flow_noslab"] = se.write_noslab_flow(out, vf, vplate)
         need = {"maxNod": g["nodes"], "maxEl": g["triangles"], "maxFEl": g["faults"]}
         for fn in ("OrbScore2.f90", "OrbData5.f90"):     # compile-time array sizes, raised only where too small
             src = open(f"{S}/src/{fn}").read()
@@ -78,7 +84,10 @@ def main():
     json.dump(summary, open(se.RES / f"shells_feg_{MODE}{TAG}.json", "w"), indent=1)
     summary["build_ok"] = se.shellset_build()
     if summary["build_ok"]:
-        os.system(f"cp {S}/EXAMPLES/ListEx1/ListInput.in {S}/EXAMPLES/ListEx1/InputFiles.in {S}/INPUT/")
+        if se.RESID:   # parameter file with iConve = 2 and the flow file in the Main and Final sections, as E-1119-14
+            se.setup_variant("hcnoslab", str(flow_fn))
+        else:
+            os.system(f"cp {S}/EXAMPLES/ListEx1/ListInput.in {S}/EXAMPLES/ListEx1/InputFiles.in {S}/INPUT/")
         if WEAK:    # third line of the "All:" block names the rheology table (MOD_ShellSet.f90 readSHELLS)
             fl = open(f"{S}/INPUT/InputFiles.in").read().splitlines()
             fl[3] = "LR_orogen.dat \t non-default Lithospheric Rheologies"
@@ -114,12 +123,13 @@ def main():
             open(f"{S}/INPUT/ListInput.in", "w").write(f"{nv + 1},{nm}\n" + "\n".join(body) + "\n")
         t = time.time()
         code, _ = se.sh_run(se.ONEAPI + "export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1; "
-                            f"set -o pipefail; mpirun -np {2 if SMOKE else 4} ./ShellSet.exe -Iter {1 if SMOKE else 4} "
+                            f"set -o pipefail; mpirun -np {2 if SMOKE else 4} ./ShellSet.exe -Iter {1 if SMOKE or se.RESID else 4} "
                             "-InOpt List -Dir Lhealed -GM 5,SSR,GV,SD,SA,FSR 2>&1 | tail -60", cwd=S, timeout=se.RUN_TIMEOUT_S * 2)
         m = glob.glob(f"{S}/Lhealed/**/Models.txt", recursive=True)
         summary["healed"] = {"exit": code, "seconds": round(time.time() - t), "models": models_table(m[0]) if m else None}
         with zipfile.ZipFile(se.RES / f"shells_feg_{MODE}{TAG}_shellsF.zip", "w", zipfile.ZIP_DEFLATED) as zf:
             for f in glob.glob(f"{S}/Lhealed/ThID_*_ShellsF_output/*") + glob.glob(f"{S}/Lhealed/ThID_*_Data_output/*") + \
+                    glob.glob(f"{S}/Lhealed/ThID_*_Shells_output/qEarth_*") + \
                     glob.glob(f"{S}/Error/*") + glob.glob(f"{S}/*Error*.txt") + m + [f"{S}/INPUT/Earth5R.feg", f"{S}/INPUT/ListInput.in"]:
                 zf.write(f, os.path.relpath(f, S))
     summary["reference"] = se.models_table(f"{S}/EXAMPLES/ListEx1/Models.txt")
