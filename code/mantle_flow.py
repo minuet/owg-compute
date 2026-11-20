@@ -23,7 +23,7 @@ poloidal B = grad Y / sqrt(l(l+1)) and toroidal C = -r x grad Y / sqrt(l(l+1)) c
 convention, checked against HC itself on Kaggle (owg-hc-probe, 2026-11-03: misfit 0 for l = 1, 2, m = 0, 1, both
 cos and sin terms). HC runs at degree 31 (it needs 2^n - 1); as in LBR98 the inputs are truncated at degree 25 and the stresses at 20.
 """
-import os, math, subprocess, tempfile
+import os, math, subprocess, sys, tempfile
 import numpy as np
 from scipy.special import lpmv, gammaln
 
@@ -95,8 +95,8 @@ def build_hc(dest="/tmp/hc"):
     """Clone the pinned HC version and build it without GMT (Linux / Kaggle). A file lock makes runs started together
     (multi_seed.py) build it once; without it two clones into the same folder collided (2026-11-08, v20str seed 5)."""
     import fcntl
-    # off the cloud all traffic goes through the user's proxy (CLAUDE.md "网络"); Kaggle and GitHub Actions use their own network
-    proxy = "" if os.environ.get("KAGGLE_KERNEL_RUN_TYPE") or os.environ.get("GITHUB_ACTIONS") else "-c http.proxy=socks5h://192.168.0.6:1080 "
+    # the user's proxy (CLAUDE.md "网络") exists only on the user's Mac; every cloud machine (Linux) uses its own network
+    proxy = "-c http.proxy=socks5h://192.168.0.6:1080 " if sys.platform == "darwin" else ""
     with open(f"{dest}.lock", "w") as lk:
         fcntl.flock(lk, fcntl.LOCK_EX)
         if not os.path.exists(f"{dest}/bin/hc"):
