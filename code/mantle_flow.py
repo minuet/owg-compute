@@ -95,8 +95,8 @@ def build_hc(dest="/tmp/hc"):
     """Clone the pinned HC version and build it without GMT (Linux / Kaggle). A file lock makes runs started together
     (multi_seed.py) build it once; without it two clones into the same folder collided (2026-11-08, v20str seed 5)."""
     import fcntl
-    # off Kaggle all traffic goes through the user's proxy (CLAUDE.md "网络"); Kaggle uses its own network
-    proxy = "" if os.environ.get("KAGGLE_KERNEL_RUN_TYPE") else "-c http.proxy=socks5h://192.168.0.6:1080 "
+    # off the cloud all traffic goes through the user's proxy (CLAUDE.md "网络"); Kaggle and GitHub Actions use their own network
+    proxy = "" if os.environ.get("KAGGLE_KERNEL_RUN_TYPE") or os.environ.get("GITHUB_ACTIONS") else "-c http.proxy=socks5h://192.168.0.6:1080 "
     with open(f"{dest}.lock", "w") as lk:
         fcntl.flock(lk, fcntl.LOCK_EX)
         if not os.path.exists(f"{dest}/bin/hc"):
