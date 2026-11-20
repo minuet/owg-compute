@@ -121,9 +121,12 @@ def main():
                 body = body[:-1]
             body += [f"---------- Var{nv + 1}:"] + ["273."] * nm + ["----------"]
             open(f"{S}/INPUT/ListInput.in", "w").write(f"{nv + 1},{nm}\n" + "\n".join(body) + "\n")
+        # ShellSet aborts with "more threads than ever needed" when ranks exceed models + 1 (rank 0 only distributes;
+        # 4 ranks on 1 model failed on GitHub, 2 ranks on 1 model run): 4 ranks (the runner's cores) at most
+        n_rank = min(2 if SMOKE else 4, int(open(f"{S}/INPUT/ListInput.in").readline().split(",")[1]) + 1)
         t = time.time()
         code, _ = se.sh_run(se.ONEAPI + "export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1; "
-                            f"set -o pipefail; mpirun -np {2 if SMOKE else 4} ./ShellSet.exe -Iter {1 if SMOKE or se.RESID else 4} "
+                            f"set -o pipefail; mpirun -np {n_rank} ./ShellSet.exe -Iter {1 if SMOKE or se.RESID else 4} "
                             "-InOpt List -Dir Lhealed -GM 5,SSR,GV,SD,SA,FSR 2>&1 | tail -60", cwd=S, timeout=se.RUN_TIMEOUT_S * 2)
         m = glob.glob(f"{S}/Lhealed/**/Models.txt", recursive=True)
         summary["healed"] = {"exit": code, "seconds": round(time.time() - t), "models": models_table(m[0]) if m else None}
