@@ -11,6 +11,7 @@ jobs:
   run:
     runs-on: ubuntu-24.04
     timeout-minutes: 350          # technical: under GitHub's 6 h job limit, so the results upload still runs
+    env: {I_MPI_FABRICS: shm, FI_PROVIDER: shm}   # one machine: Intel MPI over shared memory; its default PSM3 fails on the runner NIC (mana_0)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
