@@ -1,0 +1,29 @@
+# One tool run per dispatch (cloud/gh_submit.sh), the GitHub counterpart of a Kaggle tool kernel.
+name: run
+on:
+  workflow_dispatch:
+    inputs:
+      script: {required: true, type: string}
+      args: {required: true, type: string}     # JSON list, as runner.py reads it
+      name: {required: true, type: string}
+run-name: ${{ inputs.name }}
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350          # technical: under GitHub's 6 h job limit, so the results upload still runs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -q numpy scipy matplotlib pygplates==1.0.0
+      - name: Intel oneAPI (same pinned packages as shells_earth_flow.shellset_build, which needs root for them)
+        run: |
+          wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor | sudo tee /usr/share/keyrings/oneapi.gpg > /dev/null
+          echo 'deb [signed-by=/usr/share/keyrings/oneapi.gpg] https://apt.repos.intel.com/oneapi all main' | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq intel-oneapi-compiler-fortran-2024.2 intel-oneapi-mkl-devel-2024.2 intel-oneapi-mpi-devel-2021.13 | tail -5
+      - run: python runner.py
+        env: {RUN_SCRIPT: "${{ inputs.script }}", RUN_ARGS: "${{ inputs.args }}", RUN_NAME: "${{ inputs.name }}"}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: "${{ inputs.name }}", path: out/, retention-days: 7}

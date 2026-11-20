@@ -1,0 +1,177 @@
+<title>新星球预览</title>
+<style>
+/* layout: big rotatable globe on the left (top on phones); candidate list + details on the right */
+:root{
+  --bg:#0d1416; --panel:#151f22; --fg:#e8eeec; --muted:#93a4a0; --line:#25343a; --accent:#ff6b4a; --ok:#7fd29b; --okbg:#1c3427; --tagbg:#213035; --riftbg:#3e231c; --sel:#22343a;
+  --display:"Noto Serif SC","Songti SC",serif; --body:"Noto Sans SC","PingFang SC",system-ui,sans-serif; color-scheme:dark;
+}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);line-height:1.55;padding-inline:16px;padding-block:16px 32px}
+.app{max-width:1500px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1.6fr) minmax(300px,1fr);gap:20px;align-items:start}
+@media (max-width:860px){.app{grid-template-columns:1fr}}
+h1{font-family:var(--display);font-size:1.6rem;margin:0 0 4px;text-wrap:balance}
+.sub{color:var(--muted);font-size:.9rem;margin:0}
+.stage{position:sticky;top:env(safe-area-inset-top,0px);display:grid;gap:10px;min-width:0}
+#globe{width:100%;aspect-ratio:1/1;max-height:82vh;border-radius:12px;background:radial-gradient(circle at 50% 45%,#1b2a33 0%,#0d1416 70%);touch-action:none;cursor:grab;display:block}
+#globe:active{cursor:grabbing}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button{font:inherit;color:var(--fg);background:var(--tagbg);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+button:hover{border-color:var(--muted)} button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.hint{color:var(--muted);font-size:.82rem}
+.pad{display:inline-flex;gap:4px}.pad button{padding:6px 10px;min-width:2.4em;touch-action:none}
+.side{display:grid;gap:14px;min-width:0}
+.detail{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;display:grid;gap:10px}
+.detail h2{font-family:var(--display);font-size:1.4rem;margin:0}
+.tags{display:flex;flex-wrap:wrap;gap:6px}
+.tag{font-size:.78rem;padding:2px 9px;border-radius:99px;background:var(--tagbg);color:var(--muted)}
+.tag.ok{background:var(--okbg);color:var(--ok)} .tag.rift{background:var(--riftbg);color:var(--accent);font-weight:600}
+dl{margin:0;display:grid;gap:5px;font-size:.92rem} dl div{display:grid;grid-template-columns:4.5em 1fr;gap:8px} dt{color:var(--muted)} dd{margin:0;font-variant-numeric:tabular-nums;min-width:0}
+.list{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.pick{display:grid;gap:2px;text-align:left;padding:8px 10px}
+.pick b{font-family:var(--display);font-size:1.05rem} .pick span{font-size:.75rem;color:var(--muted)}
+.pick.rift span.r{color:var(--accent)}
+.pick[aria-pressed="true"]{background:var(--sel);border-color:var(--accent)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;list-style:none;padding:0;margin:0;font-size:.8rem;color:var(--muted)}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.note{font-size:.82rem;color:var(--muted);margin:0}
+.note b{color:var(--accent)}
+</style>
+<div class="app">
+  <div class="stage">
+    <div><h1>新星球预览</h1><p class="sub">这 3 颗都通过了全部科学检查（板块运动、海底、海平面、陆地高度），也符合外观要求：大陆被海隔开、分散到各个时区、有大小不一的岛。气候还没筛选。前四颗是最新一版（大陆互相隔开、加了大岛和中岛），后两颗是上一版。前两颗（3012、3016）是"大陆分散到各个时区"的新版本；后四颗是上一版。键盘 W A S D 或方向键转动，Q / E 缩小放大；也可以拖动或用滚轮。黄线是赤道，橙线是南北回归线，浅蓝线是南北极圈，<b style="color:var(--accent)">红色标记</b>是故事起点。</p></div>
+    <canvas id="globe" aria-label="可旋转的星球"></canvas>
+    <div class="bar"><button id="goStart">转到故事起点</button><button id="spin" aria-pressed="true">自动旋转：开</button><button id="north">北极朝上</button><button id="np">看北极</button><button id="sp">看南极</button><button id="grid" aria-pressed="true">经纬线：开</button><span class="pad"><button data-k="arrowleft" aria-label="向左转">←</button><button data-k="arrowup" aria-label="向上转">↑</button><button data-k="arrowdown" aria-label="向下转">↓</button><button data-k="arrowright" aria-label="向右转">→</button><button data-k="e" aria-label="放大">＋</button><button data-k="q" aria-label="缩小">－</button></span><span class="hint" id="coord"></span></div>
+  </div>
+  <div class="side">
+    <section class="detail" id="detail" aria-live="polite"></section>
+    <section><div class="list" id="list"></div></section>
+    <ul class="legend">
+      <li><i style="background:#166e3c"></i>热带雨林</li><li><i style="background:#c4b45a"></i>稀树草原</li><li><i style="background:#e2c48c"></i>沙漠</li><li><i style="background:#aabe6e"></i>草原</li><li><i style="background:#509650"></i>温带森林</li><li><i style="background:#3c695f"></i>针叶林</li><li><i style="background:#96a08c"></i>苔原</li><li><i style="background:#f5f8fc"></i>冰雪</li><li><i style="background:#c8c8d2"></i>高山冰雪</li><li><i style="background:#5fa0cd"></i>浅海 / 低于海面的盆地</li><li><i style="background:#0e2655"></i>深海</li>
+    </ul>
+    <p class="note">陆地按粗略气候着色，地形起伏放大了一些。红色标记是可能的故事起点（雨林挨着草原的地方）。这是预览：先看大陆、海岸和岛屿像不像一颗真的星球。</p>
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const P = [];
+const cv = document.getElementById("globe");
+const renderer = new THREE.WebGLRenderer({canvas: cv, antialias: true, alpha: true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100); camera.position.set(0, 0, 3.6);
+scene.add(new THREE.AmbientLight(0xffffff, 0.72));
+const sun = new THREE.DirectionalLight(0xffffff, 0.55); sun.position.set(-2, 1.5, 3); scene.add(sun);
+const world = new THREE.Group(); scene.add(world);
+const loader = new THREE.TextureLoader(); const cache = {};
+const mat = new THREE.MeshPhongMaterial({shininess: 8, bumpScale: 0.035});
+const globe = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 96), mat); world.add(globe);
+const atm = new THREE.Mesh(new THREE.SphereGeometry(1.035, 64, 48), new THREE.MeshBasicMaterial({color: 0x6fb4ff, transparent: true, opacity: 0.08, side: THREE.BackSide})); scene.add(atm);
+// story-start marker: a pin standing on the surface plus a ring
+const pin = new THREE.Group();
+const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.12, 8), new THREE.MeshBasicMaterial({color: 0xffffff})); stick.position.y = 0.06; pin.add(stick);
+const head = new THREE.Mesh(new THREE.SphereGeometry(0.025, 16, 12), new THREE.MeshBasicMaterial({color: 0xff4a2a})); head.position.y = 0.13; pin.add(head);
+const ring = new THREE.Mesh(new THREE.RingGeometry(0.03, 0.045, 32), new THREE.MeshBasicMaterial({color: 0xff4a2a, side: THREE.DoubleSide, transparent: true, opacity: 0.9})); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.002; pin.add(ring);
+world.add(pin);
+// graticule: meridians every 30 deg, parallels every 30 deg; equator, tropics and polar circles highlighted
+const grid = new THREE.Group(); world.add(grid);
+function line(pts, color, op){ const g = new THREE.BufferGeometry().setFromPoints(pts); return new THREE.Line(g, new THREE.LineBasicMaterial({color, transparent: true, opacity: op})); }
+for (let lon = -180; lon < 180; lon += 30){ const p = []; for (let lat = -90; lat <= 90; lat += 2) p.push(dir(lat, lon).multiplyScalar(1.003)); grid.add(line(p, 0xffffff, lon === 0 ? 0.45 : 0.18)); }
+const par = [[-60,0xffffff,.18],[-30,0xffffff,.18],[30,0xffffff,.18],[60,0xffffff,.18],[0,0xffd34d,.75],[23,0xffb347,.45],[-23,0xffb347,.45],[66.5,0x9fd8ff,.6],[-66.5,0x9fd8ff,.6]];
+par.forEach(([lat, c, op]) => { const p = []; for (let lon = -180; lon <= 180; lon += 2) p.push(dir(lat, lon).multiplyScalar(1.003)); grid.add(line(p, c, op)); });
+// axis through the poles with labels
+grid.add(line([new THREE.Vector3(0, 1.0, 0), new THREE.Vector3(0, 1.18, 0)], 0xffffff, 0.9));
+grid.add(line([new THREE.Vector3(0, -1.0, 0), new THREE.Vector3(0, -1.18, 0)], 0xffffff, 0.9));
+function label(text, pos, color){ const c = document.createElement("canvas"); c.width = 128; c.height = 64; const x = c.getContext("2d");
+  x.font = "bold 40px PingFang SC, Noto Sans SC, sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.lineWidth = 6; x.strokeStyle = "rgba(0,0,0,.7)"; x.strokeText(text, 64, 32); x.fillStyle = color; x.fillText(text, 64, 32);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({map: new THREE.CanvasTexture(c), depthTest: false})); sp.scale.set(0.22, 0.11, 1); sp.position.copy(pos); return sp; }
+grid.add(label("北极", new THREE.Vector3(0, 1.26, 0), "#ffffff")); grid.add(label("南极", new THREE.Vector3(0, -1.26, 0), "#ffffff"));
+grid.add(label("赤道", dir(0, 0).multiplyScalar(1.06).add(new THREE.Vector3(0, 0.035, 0)), "#ffd34d"));
+function dir(lat, lon){ // same convention as THREE.SphereGeometry UVs (texture left edge = longitude -180)
+  const phi = (lon + 180) / 360 * 2 * Math.PI, th = (90 - lat) / 180 * Math.PI;
+  return new THREE.Vector3(-Math.cos(phi) * Math.sin(th), Math.cos(th), Math.sin(phi) * Math.sin(th));
+}
+function faceQ(lat, lon){
+  const phi = (lon + 180) / 360 * 2 * Math.PI, a = Math.PI / 2 - phi, b = lat * Math.PI / 180;
+  return new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), b).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), a));
+}
+function tex(url){ if(!cache[url]){ const t = loader.load(url); t.anisotropy = 4; cache[url] = t; } return cache[url]; }
+let cur = null, spin = true, anim = null;
+function ll(lat, lon){ return (lat >= 0 ? "北纬 " : "南纬 ") + Math.abs(lat).toFixed(1) + "°，" + (lon >= 0 ? "东经 " : "西经 ") + Math.abs(lon).toFixed(1) + "°"; }
+function show(p){
+  cur = p; mat.map = tex(p.tex); mat.bumpMap = tex(p.bump); mat.needsUpdate = true;
+  const n = dir(p.start[0], p.start[1]); pin.position.copy(n); pin.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), n);
+  document.querySelectorAll(".pick").forEach(b => b.setAttribute("aria-pressed", b.dataset.seed == p.seed));
+  const tags = [];
+  tags.push(p.rift ? `<span class="tag rift">起点旁有裂谷</span>` : `<span class="tag">起点靠高地，没有裂谷</span>`);
+  tags.push(`<span class="tag">岛屿（≥ 1000 km²）${p.islands} 个</span>`);
+  if (p.walk != null) tags.push(p.walk >= 20 && p.boat >= 80 ? `<span class="tag ok">迁徙检查通过</span>` : `<span class="tag">迁徙差一点</span>`);
+  tags.push(p.finedata ? `<span class="tag ok">精细地图（约 22 km）</span>` : `<span class="tag">粗略地图（约 87 km，小岛看不到）</span>`);
+  if (p.note) tags.push(`<span class="tag ${p.noteok ? "ok" : ""}">${p.note}</span>`);
+  document.getElementById("detail").innerHTML = `<h2>星球 ${p.seed}</h2><div class="tags">${tags.join("")}</div>
+   <dl><div><dt>大陆</dt><dd>${p.big.length} 块主要大陆（各占陆地 ${p.big.map(b => b + "%").join("、")}）；纬度 60° 以上的陆地占 ${p.polar}%</dd></div>
+   <div><dt>气候</dt><dd>宜居 ${p.hab}% · 沙漠 ${p.des}% · 寒冷 ${p.cold}%（冰雪 ${p.ice}%，苔原 ${p.tun}%）<br><span class="hint">地球按同样方法：宜居 71% · 沙漠 13% · 寒冷 16%</span></dd></div>
+   <div><dt>故事起点</dt><dd>${ll(p.start[0], p.start[1])}</dd></div>
+   <div><dt>迁徙</dt><dd>${p.walk != null ? `走路或坐筏子能到 ${p.walk}% 的陆地，坐船能到 ${p.boat}%` : "待精细检查"}</dd></div></dl>`;
+  turnTo(faceQ(p.start[0], p.start[1]).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), 0)));
+}
+function turnTo(q){ anim = {from: world.quaternion.clone(), to: q, t: 0}; }
+const list = document.getElementById("list");
+P.forEach(p => { const b = document.createElement("button"); b.className = "pick" + (p.rift ? " rift" : ""); b.dataset.seed = p.seed;
+  b.innerHTML = `<b>${p.seed}</b><span>${p.preview ? "预览" : "第 " + p.rank + " 名"}</span>${p.rift ? '<span class="r">裂谷起点</span>' : '<span>高山起点</span>'}`;
+  b.addEventListener("click", () => show(p)); list.appendChild(b); });
+document.getElementById("goStart").onclick = () => cur && turnTo(faceQ(cur.start[0], cur.start[1]));
+document.getElementById("north").onclick = () => { // keep the current front longitude, put north up
+  const v = new THREE.Vector3(0,0,1).applyQuaternion(world.quaternion.clone().invert());
+  const lat = Math.asin(v.y) * 180 / Math.PI, phi = Math.atan2(v.z, -v.x), lon = phi * 180 / Math.PI - 180;
+  turnTo(faceQ(lat, ((lon + 540) % 360) - 180)); };
+document.getElementById("np").onclick = () => turnTo(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), Math.PI / 2 - 0.35));
+document.getElementById("sp").onclick = () => turnTo(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), -Math.PI / 2 + 0.35));
+const gridBtn = document.getElementById("grid"); gridBtn.onclick = () => { grid.visible = !grid.visible; gridBtn.textContent = "经纬线：" + (grid.visible ? "开" : "关"); gridBtn.setAttribute("aria-pressed", grid.visible); };
+const spinBtn = document.getElementById("spin");
+document.querySelectorAll(".pad button").forEach(b => { const k = b.dataset.k;
+  b.addEventListener("pointerdown", e => { e.preventDefault(); keys.add(k); spin = false; spinBtn.textContent = "自动旋转：关"; });
+  ["pointerup", "pointerleave", "pointercancel"].forEach(ev => b.addEventListener(ev, () => keys.delete(k))); });
+spinBtn.onclick = () => { spin = !spin; spinBtn.textContent = "自动旋转：" + (spin ? "开" : "关"); spinBtn.setAttribute("aria-pressed", spin); };
+// drag to rotate, wheel / pinch to zoom
+let drag = null, pinch = null; const pts = new Map();
+cv.addEventListener("pointerdown", e => { cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]); drag = [e.clientX, e.clientY]; anim = null; spin = false; spinBtn.textContent = "自动旋转：关"; spinBtn.setAttribute("aria-pressed", false); });
+cv.addEventListener("pointermove", e => {
+  if (!pts.has(e.pointerId)) return;
+  if (e.pointerType === "mouse" && e.buttons === 0) { up(e); return; }   // released outside the page: stop dragging pts.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pts.size === 2) { const [a, b] = [...pts.values()]; const d = Math.hypot(a[0]-b[0], a[1]-b[1]); if (pinch) zoom(pinch / d); pinch = d; return; }
+  const k = 2.2 / cv.clientWidth * (camera.position.z - 1) / 2.6;
+  const dx = e.clientX - drag[0], dy = e.clientY - drag[1]; drag = [e.clientX, e.clientY];
+  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), dx * k).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), dy * k));
+  world.quaternion.premultiply(q); });
+const keys = new Set();
+const up = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; if (pts.size === 1) drag = [...pts.values()][0]; };
+cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up); cv.addEventListener("lostpointercapture", up);
+window.addEventListener("blur", () => { pts.clear(); pinch = null; keys.clear(); });
+const KEYS = ["w","a","s","d","q","e","arrowup","arrowdown","arrowleft","arrowright","-","=","+"];
+window.addEventListener("keydown", e => { const k = e.key.toLowerCase(); if (!KEYS.includes(k) || e.ctrlKey || e.metaKey) return;
+  e.preventDefault(); keys.add(k); spin = false; spinBtn.textContent = "自动旋转：关"; spinBtn.setAttribute("aria-pressed", false); });
+window.addEventListener("keyup", e => keys.delete(e.key.toLowerCase()));
+function zoom(f){ camera.position.z = Math.min(5, Math.max(1.35, camera.position.z * f)); }
+cv.addEventListener("wheel", e => { e.preventDefault(); zoom(Math.exp(e.deltaY * 0.001)); }, {passive: false});
+// show the coordinate under the pointer
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2(), coord = document.getElementById("coord");
+cv.addEventListener("mousemove", e => { const r = cv.getBoundingClientRect(); mouse.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
+  ray.setFromCamera(mouse, camera); const h = ray.intersectObject(globe)[0];
+  if (!h) { coord.textContent = ""; return; } const v = world.worldToLocal(h.point.clone()).normalize();
+  const lat = Math.asin(v.y) * 180 / Math.PI; let lon = Math.atan2(v.z, -v.x) * 180 / Math.PI - 180; lon = ((lon + 540) % 360) - 180; coord.textContent = ll(lat, lon); });
+function resize(){ const w = cv.clientWidth, h = cv.clientHeight; if (cv.width !== Math.round(w * renderer.getPixelRatio()) || cv.height !== Math.round(h * renderer.getPixelRatio())) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); } }
+const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches; if (reduce) { spin = false; spinBtn.textContent = "自动旋转：关"; }
+function loop(){
+  resize();
+  if (anim) { anim.t = Math.min(1, anim.t + (reduce ? 1 : 0.04)); const s = anim.t < 1 ? 1 - Math.pow(1 - anim.t, 3) : 1; world.quaternion.copy(anim.from).slerp(anim.to, s); if (anim.t >= 1) anim = null; }
+  else if (spin) world.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), 0.0025));
+  // keyboard: W/S or Up/Down tilt, A/D or Left/Right turn, Q/E or -/+ zoom
+  if (keys.size) { const k = 0.025 * (camera.position.z - 1) / 2.6; let ax = 0, ay = 0;
+    // the view moves like a camera: up = look further north, left = look further west
+    if (keys.has("w") || keys.has("arrowup")) ax += k; if (keys.has("s") || keys.has("arrowdown")) ax -= k;
+    if (keys.has("a") || keys.has("arrowleft")) ay += k; if (keys.has("d") || keys.has("arrowright")) ay -= k;
+    if (ax || ay) { anim = null; world.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), ax)).premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), ay)); }
+    if (keys.has("q") || keys.has("-")) zoom(1.02); if (keys.has("e") || keys.has("=") || keys.has("+")) zoom(1 / 1.02); }
+  const pulse = 1 + 0.25 * Math.sin(performance.now() / 300); ring.scale.set(pulse, pulse, pulse);
+  renderer.render(scene, camera); requestAnimationFrame(loop); }
+show(P[0]); world.quaternion.copy(faceQ(P[0].start[0], P[0].start[1])); anim = null; loop();
+</script>

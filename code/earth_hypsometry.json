@@ -1,0 +1,14 @@
+{
+ "land_frac_of_surface": 0.28158220302332865,
+ "land_mean_m": 835.0154741775765,
+ "land_mean_excl_antarctica_m": 705.6244654190846,
+ "land_median_m": 655.0,
+ "land_above_1000m_frac": 0.27037253461198135,
+ "land_above_2000m_frac": 0.11453020330727177,
+ "land_above_3000m_frac": 0.05152662176419151,
+ "land_above_1000m_frac_excl_antarctica": 0.21704870729455508,
+ "land_above_2000m_frac_excl_antarctica": 0.06710969072161624,
+ "ocean_mean_depth_m": 3651.724908490679,
+ "shelf_0_200m_frac_of_ocean": 0.08266305746238616,
+ "ocean_shallower_1000m_frac": 0.12707056385910367
+}

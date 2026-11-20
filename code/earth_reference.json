@@ -1,0 +1,30 @@
+{
+ "source": "Müller et al. 2022 plate model (mantle-optimised frame), 0-200 Ma every 10 Myr; band = p10-p90 over time steps",
+ "net_rotation_deg_myr": [
+  0.064,
+  0.14
+ ],
+ "net_rotation_max": 0.151,
+ "ocean_plate_median_cm_yr": [
+  5.92,
+  9.042
+ ],
+ "ocean_plate_max_cm_yr": 21.47,
+ "cont_plate_median_cm_yr": [
+  1.138,
+  3.059
+ ],
+ "cont_plate_max_cm_yr": 7.28,
+ "trench_abs_mean_cm_yr": [
+  2.697,
+  4.693
+ ],
+ "trench_retreat_frac": [
+  0.767,
+  0.867
+ ],
+ "trench_fast_advance_frac": [
+  0.003,
+  0.055
+ ]
+}
