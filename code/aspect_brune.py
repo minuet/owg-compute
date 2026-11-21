@@ -7,9 +7,11 @@ plasticity with friction softening 0.5 -> 0.05 over plastic strain 0..1; free su
 surface, 1350 C below the lithosphere, with the 1350 C isotherm raised 10 km in a 20 km wide triangle at the centre.
 Force: left side fixed (zero velocity: horizontal by symmetry, vertical because with an open bottom nothing else
 stops the box from moving up or down as a whole - ASPECT's free-surface stabilization scales with the time step, which
-is 0 at step 0, so with free slip the first Stokes solve fails with NaN), right side the lithostatic pressure of the far-field column minus a uniform
-tension F / 120 km over the lithosphere, so the force in excess of lithostatic is F; bottom open with the lithostatic
-pressure (in place of their Winkler foundation). Not included: elasticity, compressibility, shear heating (see
+is 0 at step 0, so with free slip the first Stokes solve fails with NaN), right side a rigid plate end: one
+horizontal velocity at all depths (vertical free), rescaled every step so that the force in excess of lithostatic
+stays at F (plugin tools/aspect_force_controlled.cc); bottom open with the lithostatic pressure (in place of their
+Winkler foundation). A uniform tension on the right side instead (smoke runs 1-5) pulled the weak base of the
+lithosphere out of the box at > 100 mm/yr with 4 % of F applied (E-1121-25). Not included: elasticity, compressibility, shear heating (see
 PARAM_AUDIT 11.15). The opening velocity is the maximum velocity on the right boundary (ASPECT statistics).
 Segments: a run stops at ASPECT_WALL_H hours with a checkpoint; if restart.zip from the previous segment is present in
 the code folder, the run resumes from it.
@@ -52,10 +54,11 @@ NL_TOL, NL_MAX = 1e-4, 100                  # cookbook nonlinear solver settings
 VIZ_YR = 1e6
 VIZ_SMOKE_YR = 0                            # technical: a smoke run writes every step (0 = each step in ASPECT)
 CHECKPOINT_S = 1800
-RAMP_YR = 0.5e6                             # technical: the tension grows linearly from 0 to F over this time (files .0
-                                            # without tension, .1 and .2 with; full force applied at t=0 to this
-                                            # elastic-free model left step 0 unconverged after 35 iterations); delays
-                                            # breakup by at most RAMP_YR / 2, against the 7-16 Myr pass window
+FC_V0_MM_YR = 1.0                           # technical: right-side velocity of step 0, before any force is measured
+FC_EXPONENT = 1.0                           # technical: m in v_new = v_old (F / F_m)^m; stable without overshoot for
+                                            # every creep law n >= 1 (PARAM_AUDIT 11.15)
+FC_MAX_FACTOR = 2.0                         # technical: largest change of the right-side velocity in one step
+PLUGIN = "/tmp/aspect-plugin/libaspect_force_controlled.so"
 
 os.makedirs("results", exist_ok=True)
 res = {"F_TN_m": F, "end_myr": END_MYR, "smoke": SMOKE}
@@ -125,22 +128,13 @@ def write_inputs():
             for i in range(len(x)):
                 f.write(f"{x[i]:.0f} {y[j]:.0f} {t[j, i] + 273.15:.3f}\n")
     p = lithostatic(d, t[:, -1])                           # far-field column at the right side
-    # ASPECT interpolates linearly between the file points, so the tension ends in a ramp half a grid step wide either
-    # side of the LAB node; dividing by LAB + DX_T / 2 makes that profile integrate to F exactly
-    tension = np.where(d <= LAB_KM * 1e3, F * 1e12 / (LAB_KM * 1e3 + DX_T / 2), 0.0)
-    for n, w in ((0, 0.0), (1, 1.0), (2, 1.0)):            # ramp: ASPECT interpolates in time between files
-        with open(f"{D}/brune_traction_right.{n}.txt", "w") as f:
-            f.write(f"# POINTS: {len(d)}\n# y pressure\n")
-            for j in order:
-                f.write(f"{y[j]:.0f} {p[j] - w * tension[j]:.6e}\n")
-        with open(f"{D}/brune_traction_bottom.{n}.txt", "w") as f:
-            f.write(f"# POINTS: 2\n# x pressure\n0 {p[-1]:.6e}\n{X_KM * 1e3:.0f} {p[-1]:.6e}\n")
+    with open(f"{D}/brune_traction_bottom.txt", "w") as f:
+        f.write(f"# POINTS: 2\n# x pressure\n0 {p[-1]:.6e}\n{X_KM * 1e3:.0f} {p[-1]:.6e}\n")
     names = ("uc", "lc", "sm", "wm")
     moho = int(MOHO_KM * 1e3 / DX_T)
     return {"T_moho_far_C": round(float(t[moho, -1]), 1), "T_moho_centre_C": round(float(t[moho, len(x) // 2]), 1),
             "surface_heat_flow_mW": round(float(K["uc"] * (t[1, -1] - t[0, -1]) / DX_T * 1e3), 1),
-            "p_bottom_Pa": float(f"{p[-1]:.4e}"),
-            "check_force_TN_m": round(float(np.sum(0.5 * (tension[1:] + tension[:-1]) * np.diff(d))) / 1e12, 3)}
+            "p_bottom_Pa": float(f"{p[-1]:.4e}"), "lithostatic_force_TN_m": round(float(np.sum(0.5 * (p[1:] + p[:-1]) * np.diff(d))) / 1e12, 2)}
 
 
 def prm(end_yr, wall_h, resume):
@@ -150,6 +144,7 @@ def prm(end_yr, wall_h, resume):
     nx, ny = int(X_KM / CELL_KM), int(Y_KM / CELL_KM)
     return f"""
 set Dimension = 2
+set Additional shared libraries = {PLUGIN}
 set Start time = 0
 set End time = {end_yr:g}
 set Use years in output instead of seconds = true
@@ -196,14 +191,20 @@ subsection Mesh deformation
 end
 subsection Boundary velocity model
   set Zero velocity boundary indicators = left
+  set Prescribed velocity boundary indicators = right x: force controlled
+  subsection Force controlled
+    set Boundary = right
+    set Force = {F * 1e12:g}
+    set Initial velocity = {FC_V0_MM_YR / 1e3:g}
+    set Exponent = {FC_EXPONENT:g}
+    set Maximum factor = {FC_MAX_FACTOR:g}
+  end
 end
 subsection Boundary traction model
-  set Prescribed traction boundary indicators = right: ascii data, bottom: ascii data
+  set Prescribed traction boundary indicators = bottom: ascii data
   subsection Ascii data model
     set Data directory = {D}/
-    set Data file name = brune_traction_%s.%d.txt
-    set Data file time step = {RAMP_YR:g}
-    set First data file number = 0
+    set Data file name = brune_traction_%s.txt
   end
 end
 subsection Compositional fields
@@ -332,6 +333,16 @@ run("sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get inst
 run(f"git clone -q --depth 1 --branch v3.0.0 https://github.com/geodynamics/aspect.git {A}")
 run(f"cmake -S {A} -B {B} -G Ninja -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -3")
 _, _, res["build_s"] = run(f"ninja -C {B} -j 4 2>&1 | tail -3")
+os.makedirs(os.path.dirname(PLUGIN), exist_ok=True)
+shutil.copy("aspect_force_controlled.cc", os.path.dirname(PLUGIN))
+open(os.path.dirname(PLUGIN) + "/CMakeLists.txt", "w").write(
+    "CMAKE_MINIMUM_REQUIRED(VERSION 3.13.4)\nFIND_PACKAGE(Aspect 3.0.0 REQUIRED HINTS " + B + ")\n"
+    "DEAL_II_INITIALIZE_CACHED_VARIABLES()\nPROJECT(aspect_force_controlled)\n"
+    "ADD_LIBRARY(aspect_force_controlled SHARED aspect_force_controlled.cc)\nASPECT_SETUP_PLUGIN(aspect_force_controlled)\n")
+run(f"cd {os.path.dirname(PLUGIN)} && cmake -G Ninja . 2>&1 | tail -3 && ninja 2>&1 | tail -5 && ls *.so")
+so = glob.glob(os.path.dirname(PLUGIN) + "/*.so")
+if so and so[0] != PLUGIN:
+    shutil.copy(so[0], PLUGIN)
 EXE = f"{B}/aspect-release" if os.path.exists(f"{B}/aspect-release") else f"{B}/aspect"
 pieces = [(SMOKE_WALL_H, resume), (SMOKE_WALL_H, True)] if SMOKE else [(WALL_H, resume)]
 res["pieces"] = []
