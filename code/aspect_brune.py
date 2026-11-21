@@ -51,6 +51,10 @@ CFL = 0.5
 NL_TOL, NL_MAX = 1e-4, 100                  # cookbook nonlinear solver settings
 VIZ_YR = 1e6
 CHECKPOINT_S = 1800
+RAMP_YR = 0.5e6                             # technical: the tension grows linearly from 0 to F over this time (files .0
+                                            # without tension, .1 and .2 with; full force applied at t=0 to this
+                                            # elastic-free model left step 0 unconverged after 35 iterations); delays
+                                            # breakup by at most RAMP_YR / 2, against the 7-16 Myr pass window
 
 os.makedirs("results", exist_ok=True)
 res = {"F_TN_m": F, "end_myr": END_MYR, "smoke": SMOKE}
@@ -123,12 +127,13 @@ def write_inputs():
     # ASPECT interpolates linearly between the file points, so the tension ends in a ramp half a grid step wide either
     # side of the LAB node; dividing by LAB + DX_T / 2 makes that profile integrate to F exactly
     tension = np.where(d <= LAB_KM * 1e3, F * 1e12 / (LAB_KM * 1e3 + DX_T / 2), 0.0)
-    with open(f"{D}/brune_traction_right.txt", "w") as f:
-        f.write(f"# POINTS: {len(d)}\n# y pressure\n")
-        for j in order:
-            f.write(f"{y[j]:.0f} {p[j] - tension[j]:.6e}\n")
-    with open(f"{D}/brune_traction_bottom.txt", "w") as f:
-        f.write(f"# POINTS: 2\n# x pressure\n0 {p[-1]:.6e}\n{X_KM * 1e3:.0f} {p[-1]:.6e}\n")
+    for n, w in ((0, 0.0), (1, 1.0), (2, 1.0)):            # ramp: ASPECT interpolates in time between files
+        with open(f"{D}/brune_traction_right.{n}.txt", "w") as f:
+            f.write(f"# POINTS: {len(d)}\n# y pressure\n")
+            for j in order:
+                f.write(f"{y[j]:.0f} {p[j] - w * tension[j]:.6e}\n")
+        with open(f"{D}/brune_traction_bottom.{n}.txt", "w") as f:
+            f.write(f"# POINTS: 2\n# x pressure\n0 {p[-1]:.6e}\n{X_KM * 1e3:.0f} {p[-1]:.6e}\n")
     names = ("uc", "lc", "sm", "wm")
     moho = int(MOHO_KM * 1e3 / DX_T)
     return {"T_moho_far_C": round(float(t[moho, -1]), 1), "T_moho_centre_C": round(float(t[moho, len(x) // 2]), 1),
@@ -195,7 +200,9 @@ subsection Boundary traction model
   set Prescribed traction boundary indicators = right: ascii data, bottom: ascii data
   subsection Ascii data model
     set Data directory = {D}/
-    set Data file name = brune_traction_%s.txt
+    set Data file name = brune_traction_%s.%d.txt
+    set Data file time step = {RAMP_YR:g}
+    set First data file number = 0
   end
 end
 subsection Compositional fields
