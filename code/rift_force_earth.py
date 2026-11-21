@@ -11,6 +11,8 @@ Available force F: the vertical integral of the deviatoric stress normal to the 
 Sxx-Szz, Syy-Szz, Sxy; tension positive), mean over the elements within R_AVG of each site. Critical force Fc:
 lith_strength (our continental envelope, PARAM_AUDIT 11.1) at Hopper & Buck's critical strain rate EDOT_CRIT, for the
 heat flow Shells used there. Dike force: lith_strength.dike_force.
+Since E-1121-14 the critical force also comes from the thin-shell model's own rheology (shells_rheology, Fc_shells), so that
+force and strength come from one rheology; the lith_strength values are kept for comparison.
 
 Expected on Earth, written before the run: the East African rift (extending at 2-7 mm/yr and breaking up in Afar) must
 have F above min(Fc, dike force); the cratons (stable for > 1 Gyr) far below Fc in every direction; the slow rifts of
@@ -22,6 +24,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lith_strength as ls
 import shells_grid as sg
+from shells_rheology import shells_strength
 from fastkd import cKDTree
 from plate_checks import HERE
 
@@ -44,7 +47,7 @@ def read_run(d):
     z = zipfile.ZipFile(glob.glob(f"{d}/*_shellsF.zip")[0])
     L = z.read("INPUT/Earth5R.feg").decode().splitlines()
     n = int(L[1].split()[0]); ne = int(L[2 + n].split()[0])
-    nd = np.array([[float(x) for x in l.split()[1:5]] for l in L[2:2 + n]])        # lon, lat, elev, heat (W/m2)
+    nd = np.array([[float(x) for x in l.split()[1:7]] for l in L[2:2 + n]])        # lon, lat, elev, heat (W/m2), crust, mantle lith. (m)
     tri = np.array([[int(x) - 1 for x in l.split()[1:4]] for l in L[3 + n:3 + n + ne]])
     f = [x for x in z.namelist() if "ShellsF_output/fEarth_" in x][0]
     tau = np.array([[float(v.replace("D", "E")) for v in l.split()[2:6]]
@@ -62,16 +65,23 @@ def site(lon, lat, az_ext, nd, tri, tau, tree):
     nx, ny = -math.cos(a), math.sin(a)          # Shells' local x = south, y = east
     fn = t[0] * nx * nx + t[1] * ny * ny + 2 * t[2] * nx * ny
     fmax = (t[0] + t[1]) / 2 + math.hypot((t[0] - t[1]) / 2, t[2])
-    q = float(nd[np.unique(tri[k]), 3].mean() * 1e3)
-    return fn, fmax, t, q, len(k)
+    q, zc, zm = (float(v) for v in nd[np.unique(tri[k]), 3:6].mean(0))
+    phi = 0.5 * math.atan2(2 * t[2], t[0] - t[1])          # most tensile axis, from local south toward east
+    return fn, fmax, t, q * 1e3, len(k), zc, zm, math.degrees(math.atan2(math.sin(phi), -math.cos(phi))), az_ext
 
 
 def row(name, vals):
-    fn, fmax, q = (float(np.median([v[i] for v in vals])) for i in (0, 1, 3))
+    fn, fmax, q, zc, zm = (float(np.median([v[i] for v in vals])) for i in (0, 1, 3, 5, 6))
+    fc_s = shells_strength(q * 1e-3, zc, zm, EDOT_CRIT)
+    def axial(i):                                          # mean of axial directions (degrees from north, mod 180)
+        c = sum(math.cos(math.radians(2 * v[i])) for v in vals); s = sum(math.sin(math.radians(2 * v[i])) for v in vals)
+        return round(math.degrees(math.atan2(s, c)) / 2 % 180.0, 0)
     fc_j, fc_c, fd = ls.strength(q, True), ls.strength(q, False), ls.dike_force(q)
     return {"site": name, "points": len(vals), "q_mW": round(q, 1), "F_normal_TN": round(fn / 1e12, 2),
             "F_max_TN": round(fmax / 1e12, 2), "Fc_jelly_TN": round(fc_j / 1e12, 2), "Fc_creme_TN": round(fc_c / 1e12, 2),
-            "F_dike_TN": round(fd / 1e12, 2), "F_over_Fc_jelly": round(fn / fc_j, 2)}
+            "F_dike_TN": round(fd / 1e12, 2), "F_over_Fc_jelly": round(fn / fc_j, 2),
+            "Fc_shells_TN": round(fc_s / 1e12, 2), "F_over_Fc_shells": round(fn / fc_s, 2), "Fmax_over_Fc_shells": round(fmax / fc_s, 2),
+            "az_rift_normal_deg": axial(8), "az_model_tension_deg": axial(7)}
 
 
 def main(d):
@@ -80,15 +90,17 @@ def main(d):
     tree = cKDTree(cen)
     rows = []
     steps = [l.replace(":", " ").split() for l in open(STEPS) if l.strip()]
-    groups = {"East Africa, Main Ethiopian": lambda p, lo, la: p == "SO-AF" and la >= 5.0,
-              "East Africa, western branch": lambda p, lo, la: p == "SO-AF" and -16.0 <= la < 5.0,
-              "Baikal": lambda p, lo, la: p in ("AM-EU", "EU-AM") and lo < 113.0}
+    groups = {"East Africa, Main Ethiopian": lambda p, lo, la, star: p == "SO-AF" and la >= 5.0,
+              "East Africa, western branch": lambda p, lo, la, star: p == "SO-AF" and -16.0 <= la < 5.0,
+              "Baikal": lambda p, lo, la, star: p in ("AM-EU", "EU-AM") and lo < 113.0 and not star}
+    # Baikal: only the steps of the rift itself; PB2002 marks with * the steps inside its orogens (diffuse zones), here the
+    # Mongolian part of the Amur boundary running south from the lake (E-1121-16)
     for name, sel in groups.items():
         vals = []
         for s in steps:
             lo0, la0, lo1, la1 = (float(x) for x in s[2:6])
             lo, la = (lo0 + lo1) / 2, (la0 + la1) / 2
-            if s[-1].rstrip("*") in sg.WELD_CLASSES and sel(s[1], lo, la):
+            if s[-1].rstrip("*") in sg.WELD_CLASSES and sel(s[1], lo, la, s[-1].endswith("*")):
                 strike = math.degrees(math.atan2((lo1 - lo0) * math.cos(math.radians(la)), la1 - la0))
                 vals.append(site(lo, la, strike + 90.0, nd, tri, tau, tree))
         rows.append(row(name, vals))
