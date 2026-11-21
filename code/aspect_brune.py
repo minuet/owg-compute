@@ -5,7 +5,9 @@ Set-up (Methods): 500 x 150 km box, 2 km cells; 25 km wet-quartzite upper crust,
 dry-olivine mantle lithosphere to 120 km, wet-olivine asthenosphere; diffusion + dislocation creep, Drucker-Prager
 plasticity with friction softening 0.5 -> 0.05 over plastic strain 0..1; free surface; steady initial geotherm 0 C at the
 surface, 1350 C below the lithosphere, with the 1350 C isotherm raised 10 km in a 20 km wide triangle at the centre.
-Force: left side free slip (symmetry), right side the lithostatic pressure of the far-field column minus a uniform
+Force: left side fixed (zero velocity: horizontal by symmetry, vertical because with an open bottom nothing else
+stops the box from moving up or down as a whole - ASPECT's free-surface stabilization scales with the time step, which
+is 0 at step 0, so with free slip the first Stokes solve fails with NaN), right side the lithostatic pressure of the far-field column minus a uniform
 tension F / 120 km over the lithosphere, so the force in excess of lithostatic is F; bottom open with the lithostatic
 pressure (in place of their Winkler foundation). Not included: elasticity, compressibility, shear heating (see
 PARAM_AUDIT 11.15). The opening velocity is the maximum velocity on the right boundary (ASPECT statistics).
@@ -187,7 +189,7 @@ subsection Mesh deformation
   end
 end
 subsection Boundary velocity model
-  set Tangential velocity boundary indicators = left
+  set Zero velocity boundary indicators = left
 end
 subsection Boundary traction model
   set Prescribed traction boundary indicators = right: ascii data, bottom: ascii data
