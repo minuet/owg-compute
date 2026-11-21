@@ -21,7 +21,7 @@ with open(f"{R}/{NAME}.log", "w") as f:
                           stdout=f, stderr=subprocess.STDOUT).returncode
 with zipfile.ZipFile(f"{O}/{NAME}.zip", "w", zipfile.ZIP_DEFLATED) as z:
     for fn in set(glob.glob(R + "/*")) - before | {f"{R}/{NAME}.log"}:
-        if os.path.isfile(fn) and os.path.getsize(fn) < 2e7:
+        if os.path.isfile(fn) and os.path.getsize(fn) < 2e8:
             z.write(fn, os.path.basename(fn))
 print(open(f"{R}/{NAME}.log").read()[-3000:])
 sys.exit(code)
