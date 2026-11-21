@@ -408,8 +408,11 @@ def write_lr(in_fn, out_fn, cfric=None, fault_fric=()):
                             "dCreep(1) dCreep(2) eCreep\n" + "\n".join(rows) + "\n")
 
 
+WELD_CLASSES = ("CRB", "CTF", "CCB")   # PB2002 continental classes (Bird 2003): rift, transform, convergent
+
+
 def earth_grid(inp, steps_fn, out, refine=1.0, own_data=False, heat_rule=False, flip=(), dip_elev=False, weak=None,
-               fault_fric=()):
+               fault_fric=(), weld=()):
     """refine: both spacings divided by it (grid convergence check); own_data: nodal data from orbdata_nodes (the
     port of OrbData, E-1119-17) instead of leaving them to ShellSet's OrbData; heat_rule: node heat flow from
     heat_from_history instead of the authors' nodes ("hf14": from HFgrid14, the authors' 2026 choice, control only); flip: boundary classes whose dip direction is reversed (sensitivity
@@ -417,9 +420,22 @@ def earth_grid(inp, steps_fn, out, refine=1.0, own_data=False, heat_rule=False, 
     the higher side (toward_higher, E-1120-06) instead of copying the authors' directions; weak: orogen names (or "all")
     whose triangles get continuum friction OROGEN_CFRIC (rheology 1, file LR_set.dat; E-1120-07); fault_fric: (class,
     fFric) pairs, faults of these classes get their own friction (rheologies 2, 3, ...; E-1121-03), the others keep the
-    default fFric"""
+    default fFric; weld: plate pairs "X-Y" whose continental edges (classes WELD_CLASSES) are not cut, so the rift is
+    intact lithosphere, as a continent before breakup on a planet (E-1121-12, available force at rifts): their
+    continental steps are left out of the fault classes, and X, absorbed into Y, loses its plate-interior velocity conditions, so that no
+    inferred traction carries the observed X-Y motion into the test"""
     lines, stree, scls, slen = earth_boundaries(inp, steps_fn)
     P, tri, bedges, nb = build(lines, H_FAULT_KM / refine / R_KM, H_PLATE_KM / refine / R_KM)
+    welded, absorbed = 0, {p.split("-")[0] for p in weld}
+    if weld:
+        pairs = {frozenset(p.split("-")) for p in weld}
+        step_pair = [frozenset(l.replace(":", " ").split()[1].split("-")) for l in open(steps_fn) if l.strip()]
+        be = list(bedges)
+        for e, c in zip(be, element_classes(P, np.array([tuple(e) for e in be]), stree, scls, slen)):
+            if c in WELD_CLASSES and frozenset((bedges[e]["left"], bedges[e]["right"])) in pairs:
+                del bedges[e]; welded += 1
+        keep = np.array([not (c in WELD_CLASSES and sp in pairs) for c, sp in zip(scls, step_pair)])
+        stree, scls, slen = cKDTree(stree.data[keep]), [c for c, k in zip(scls, keep) if k], slen[keep]
     P, tri, quads = cut_faults(P, tri, bedges)
     polys = outlines(f"{inp}/PB2002_plates.dig")
     # authors' faults, for the dip direction of non-subduction faults (Earth test only)
@@ -498,7 +514,7 @@ def earth_grid(inp, steps_fn, out, refine=1.0, own_data=False, heat_rule=False, 
         body, used = [(e, ["4"]) for e in expected], set(expected)
         for l in bl[1:]:
             f = l.split()
-            if len(f) >= 4 and f[2] == "5":
+            if len(f) >= 4 and f[2] == "5" and f[3].strip('"') not in absorbed:
                 order = ptree.query(Q[int(f[1]) - 1], k=len(P))[1] + 1
                 nd = next((int(c) for c in order if c not in on_fault and plate_of(polys, P[c - 1]) == f[3].strip('"')),
                           int(order[0]))
@@ -508,7 +524,7 @@ def earth_grid(inp, steps_fn, out, refine=1.0, own_data=False, heat_rule=False, 
             f"{k + 1:8d}{nd:8d} " + " ".join(r) for k, (nd, r) in enumerate(body)) + "\n")
     return {"nodes": len(P), "boundary_nodes_unsplit": nb, "triangles": len(tri), "faults": len(faults),
             "classes": count, "footwall_conditions": len(expected), "half_bandwidth_before_after": [bw0, bw],
-            "weak_triangles": int(lr.sum()) if lr is not None else 0}
+            "weak_triangles": int(lr.sum()) if lr is not None else 0, "welded_edges": welded}
 
 
 if __name__ == "__main__":

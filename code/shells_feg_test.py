@@ -22,6 +22,8 @@ SHELLS_FAULT_FRIC=SUB:0.055,CCB:0.06 (gen only): these boundary classes get thei
        write_lr, rheologies 2, 3, ...; E-1121-03); the scanned fFric then applies to the other faults only
 SHELLS_RESID=1 (gen only): basal drag = our slab flow + per-plate residual poles, the planet's method (E-1119-14, hcnoslab;
        PLATE_PLAN section 6 step 2), instead of the authors' 4 inversion iterations against PB2002 velocities; one step
+SHELLS_WELD=SO-AF,AM-EU (gen only): these pairs' continental-rift edges are not cut (shells_grid.earth_grid weld; E-1121-12)
+SHELLS_TAU=1: Shells also writes each element's vertically integrated stress anomalies to its force file (patch_tau)
 SHELLS_TAG=x: appended to the output names, so variants of one mode can be told apart
 SHELLS_SMOKE=1: the first model only, 1 iteration, 2 MPI ranks (a few minutes; checks that the grid is read and run).
 Writes results/shells_feg_<mode>.json (grid counts, scores, the authors' reference scores) and results/shells_feg_<mode>_shellsF.zip
@@ -41,6 +43,8 @@ WEAK = os.environ.get("SHELLS_WEAK_OROGENS", "")         # "all" or orogen names
 WEAK = WEAK if WEAK in ("", "all") else WEAK.split(";")
 SCAN = os.environ.get("SHELLS_SCAN", "")                  # "tauMax list;fFric list", comma-separated (E-1120-08)
 FAULT_FRIC = [(c, float(v)) for c, v in (x.split(":") for x in os.environ.get("SHELLS_FAULT_FRIC", "").split(",") if x)]
+WELD = tuple(p for p in os.environ.get("SHELLS_WELD", "").split(",") if p)
+TAU = os.environ.get("SHELLS_TAU") == "1"
 TAG = os.environ.get("SHELLS_TAG", "")
 STEPS = "PB2002_steps.dat"      # Bird 2003, shipped with the code (reference/earth/plate-boundaries/, cloud PACK_EXTRA)
 S = se.S
@@ -58,6 +62,23 @@ def models_table(fn):
     return rows
 
 
+def patch_tau():
+    """Shells keeps the vertically integrated stress anomalies only in memory (MOD_Shells.f90, Balanc: tauMat = integrals
+    of Sxx-Szz, Syy-Szz, Sxy; tauZZI = integral of the Szz anomaly; local x = south, y = east). After the nodal forces it
+    writes to its force file (fEarth), each element gets a line "TAU", element number, then the means over its 7
+    integration points (Shells' own weights) of tauMat(1:3) and tauZZI, in N/m; nothing else changes."""
+    fn = f"{S}/src/MOD_Shells.f90"
+    src = open(fn).read()
+    a = "WRITE (iUnitF, 1020) (comp(6, i), i = 1, nEntry)\n"
+    assert src.count(a) == 1, a
+    b = a + ("DO i = 1, numEl\n"
+             "\tWRITE (iUnitF, '(A4,I8,1P,4D14.6)') 'TAU ', i, &\n"
+             "&\t\tSUM(weight * tauMat(1, :, i)) / SUM(weight), SUM(weight * tauMat(2, :, i)) / SUM(weight), &\n"
+             "&\t\tSUM(weight * tauMat(3, :, i)) / SUM(weight), SUM(weight * tauZZI(:, i)) / SUM(weight)\n"
+             "END DO\n")
+    open(fn, "w").write(src.replace(a, b))
+
+
 def main():
     se.LOG = open(se.RES / f"shells_feg_{MODE}{TAG}_steps.log", "w")
     summary = {"smoke": SMOKE, "mode": MODE}
@@ -68,11 +89,11 @@ def main():
     elif MODE == "gen":
         import shells_grid as sg
         summary["gen"] = g = sg.earth_grid(f"{S}/INPUT", STEPS, f"{S}/generated", REFINE, OWN, HEAT_RULE, FLIP, DIP_ELEV, WEAK,
-                                              FAULT_FRIC)
+                                              FAULT_FRIC, WELD)
         summary["refine"], summary["own_nodedata"], summary["heat_rule"], summary["flip"] = REFINE, OWN, HEAT_RULE, FLIP
         summary["dip_elev"], summary["weak_orogens"], summary["scan"] = DIP_ELEV, WEAK, SCAN
         summary["fault_fric"] = FAULT_FRIC
-        summary["resid"] = se.RESID
+        summary["resid"], summary["weld"] = se.RESID, WELD
         os.system(f"cp {S}/generated/* {S}/INPUT/")
         if se.RESID:
             _, summary["flow"], (out, vf, vplate) = se.hc_flow()
@@ -87,6 +108,9 @@ def main():
                     summary.setdefault("raised", []).append(f"{fn} {name} {m.group(2)} -> {n}")
             open(f"{S}/src/{fn}", "w").write(src)
     json.dump(summary, open(se.RES / f"shells_feg_{MODE}{TAG}.json", "w"), indent=1)
+    if TAU:
+        patch_tau()
+        summary["tau"] = True
     summary["build_ok"] = se.shellset_build()
     if summary["build_ok"]:
         if se.RESID:   # parameter file with iConve = 2 and the flow file in the Main and Final sections, as E-1119-14
