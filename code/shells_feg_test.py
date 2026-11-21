@@ -18,6 +18,8 @@ SHELLS_HEAT=rule (gen only): node heat flow from shells_grid.heat_from_history (
        HFgrid14.grd packed along, control of E-1120-06)
 SHELLS_DIP_FLIP=OSR,CRB (gen only): these boundary classes get the reversed dip direction (E-1120-05)
 SHELLS_DIP_RULE=elev (gen only): CCB and OCB faults dip toward the higher side (shells_grid.toward_higher, E-1120-06)
+SHELLS_FAULT_FRIC=SUB:0.055,CCB:0.06 (gen only): these boundary classes get their own fault friction (shells_grid
+       write_lr, rheologies 2, 3, ...; E-1121-03); the scanned fFric then applies to the other faults only
 SHELLS_RESID=1 (gen only): basal drag = our slab flow + per-plate residual poles, the planet's method (E-1119-14, hcnoslab;
        PLATE_PLAN section 6 step 2), instead of the authors' 4 inversion iterations against PB2002 velocities; one step
 SHELLS_TAG=x: appended to the output names, so variants of one mode can be told apart
@@ -38,6 +40,7 @@ DIP_ELEV = os.environ.get("SHELLS_DIP_RULE") == "elev"
 WEAK = os.environ.get("SHELLS_WEAK_OROGENS", "")         # "all" or orogen names joined by ";" (E-1120-07)
 WEAK = WEAK if WEAK in ("", "all") else WEAK.split(";")
 SCAN = os.environ.get("SHELLS_SCAN", "")                  # "tauMax list;fFric list", comma-separated (E-1120-08)
+FAULT_FRIC = [(c, float(v)) for c, v in (x.split(":") for x in os.environ.get("SHELLS_FAULT_FRIC", "").split(",") if x)]
 TAG = os.environ.get("SHELLS_TAG", "")
 STEPS = "PB2002_steps.dat"      # Bird 2003, shipped with the code (reference/earth/plate-boundaries/, cloud PACK_EXTRA)
 S = se.S
@@ -64,9 +67,11 @@ def main():
         os.system(f"cp {S}/healed/* {S}/INPUT/")
     elif MODE == "gen":
         import shells_grid as sg
-        summary["gen"] = g = sg.earth_grid(f"{S}/INPUT", STEPS, f"{S}/generated", REFINE, OWN, HEAT_RULE, FLIP, DIP_ELEV, WEAK)
+        summary["gen"] = g = sg.earth_grid(f"{S}/INPUT", STEPS, f"{S}/generated", REFINE, OWN, HEAT_RULE, FLIP, DIP_ELEV, WEAK,
+                                              FAULT_FRIC)
         summary["refine"], summary["own_nodedata"], summary["heat_rule"], summary["flip"] = REFINE, OWN, HEAT_RULE, FLIP
         summary["dip_elev"], summary["weak_orogens"], summary["scan"] = DIP_ELEV, WEAK, SCAN
+        summary["fault_fric"] = FAULT_FRIC
         summary["resid"] = se.RESID
         os.system(f"cp {S}/generated/* {S}/INPUT/")
         if se.RESID:
@@ -88,9 +93,9 @@ def main():
             se.setup_variant("hcnoslab", str(flow_fn))
         else:
             os.system(f"cp {S}/EXAMPLES/ListEx1/ListInput.in {S}/EXAMPLES/ListEx1/InputFiles.in {S}/INPUT/")
-        if WEAK:    # third line of the "All:" block names the rheology table (MOD_ShellSet.f90 readSHELLS)
+        if WEAK or FAULT_FRIC:    # third line of the "All:" block names the rheology table (MOD_ShellSet.f90 readSHELLS)
             fl = open(f"{S}/INPUT/InputFiles.in").read().splitlines()
-            fl[3] = "LR_orogen.dat \t non-default Lithospheric Rheologies"
+            fl[3] = "LR_set.dat \t non-default Lithospheric Rheologies"
             open(f"{S}/INPUT/InputFiles.in", "w").write("\n".join(fl) + "\n")
         if SCAN:    # replace the authors' 3 x 3 tauMax x fFric list by our own (E-1120-08), same layout
             tau, ff = ([x for x in v.split(",")] for v in SCAN.split(";"))

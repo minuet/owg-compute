@@ -46,6 +46,7 @@ HF14_FILE = "HFgrid14.grd"      # Lucazeau 2019 heat flow as the authors reforma
 HF14_MIN_W, HF14_MAX_W = 0.030, 0.300   # bounds the authors applied to HFgrid14 (same page), W/m^2
 OROGENS = "PB2002_orogens.dig"  # Bird 2003 orogen outlines, shipped with the code (reference/earth/plate-boundaries/)
 OROGEN_CFRIC = 0.205            # continuum friction inside weak orogens: the authors' 2026 Earth model (E-1120-07)
+FAULT_LR0 = 2                   # technical: first rheology number of the per-class fault frictions (1 = weak orogens)
 SNAP_KM = 1.0                   # PB2002 line ends meant to meet: <= 0.26 km apart; distinct junctions >= 28.8 km (E-1119-17)
 
 
@@ -203,7 +204,8 @@ def cut_faults(P, tri, bedges):
 
 def write_feg(fn, title, P, tri, faults, elev=None, heat=None, data=None, lr=None):
     """data: the other four nodal columns (orbdata_nodes.assign_nodes: zM, tL, chem_drho, cooling_curv); 0 = left for
-    ShellSet's OrbData to fill; lr: per triangle, True = lithospheric rheology 1 (SHELLS_v5.0 "LR" flag)"""
+    ShellSet's OrbData to fill; lr: per triangle, True = lithospheric rheology 1 (SHELLS_v5.0 "LR" flag); faults:
+    (nodes, dip1, dip2, LR#), LR# 0 = the default rheology"""
     lon, lat = lonlat(P)
     elev = np.zeros(len(P)) if elev is None else elev
     heat = np.zeros(len(P)) if heat is None else heat
@@ -217,8 +219,8 @@ def write_feg(fn, title, P, tri, faults, elev=None, heat=None, data=None, lr=Non
         for k, t in enumerate(tri):
             g.write(f"{k + 1:8d}{t[0] + 1:8d}{t[1] + 1:8d}{t[2] + 1:8d}" + (" LR1" if lr is not None and lr[k] else "") + "\n")
         g.write(f"{len(faults):8d} (nFl =  NUMBER OF CURVILINEAR FAULT ELEMENTS)\n")
-        for k, (q, d1, d2) in enumerate(faults):
-            g.write(f"{k + 1:8d}" + "".join(f"{n + 1:8d}" for n in q) + f" {d1:5.1f} {d2:5.1f} 0.00E+00\n")
+        for k, (q, d1, d2, n) in enumerate(faults):
+            g.write(f"{k + 1:8d}" + "".join(f"{n + 1:8d}" for n in q) + f" {d1:5.1f} {d2:5.1f} 0.00E+00" + (f" LR{n}" if n else "") + "\n")
 
 
 def half_bandwidth(n, tri, quads):
@@ -394,22 +396,28 @@ def weak_orogens(P, tri, dig_fn, names):
                      for x, y in zip(lon, lat)])
 
 
-def write_lr(in_fn, out_fn, cfric):
-    """SHELLS_v5.0 table of lithospheric rheology 1: the default rheology of the parameter file in_fn with continuum
-    friction cfric (columns as in the authors' LR_set_for_Earth5-2023d.dat)"""
+def write_lr(in_fn, out_fn, cfric=None, fault_fric=()):
+    """SHELLS_v5.0 table of lithospheric rheologies, each the default rheology of the parameter file in_fn with one value
+    changed (columns as in the authors' LR_set_for_Earth5-2023d.dat): LR1 continuum friction cfric (weak orogens, if
+    given), then LR2, LR3, ... fault friction of each (class, fFric) of fault_fric"""
     v = [l.split()[0] for l in open(in_fn).read().splitlines()[1:10]]
-    row = [v[0], str(cfric), v[2], v[3]] + [x for vv in v[4:8] for x in vv.split(",")] + [v[8]]
+    row = lambda ff, cf: " ".join([str(ff), str(cf), v[2], v[3]] + [x for vv in v[4:8] for x in vv.split(",")] + [v[8]])
+    rows = ([f"1 {row(v[0], cfric)}"] if cfric is not None else []) + \
+           [f"{FAULT_LR0 + k} {row(ff, v[1])}" for k, (_, ff) in enumerate(fault_fric)]
     open(out_fn, "w").write("LR# fFric cFric Biot Byerly aCreep(1) aCreep(2) bCreep(1) bCreep(2) cCreep(1) cCreep(2) "
-                            "dCreep(1) dCreep(2) eCreep\n1 " + " ".join(row) + "\n")
+                            "dCreep(1) dCreep(2) eCreep\n" + "\n".join(rows) + "\n")
 
 
-def earth_grid(inp, steps_fn, out, refine=1.0, own_data=False, heat_rule=False, flip=(), dip_elev=False, weak=None):
+def earth_grid(inp, steps_fn, out, refine=1.0, own_data=False, heat_rule=False, flip=(), dip_elev=False, weak=None,
+               fault_fric=()):
     """refine: both spacings divided by it (grid convergence check); own_data: nodal data from orbdata_nodes (the
     port of OrbData, E-1119-17) instead of leaving them to ShellSet's OrbData; heat_rule: node heat flow from
     heat_from_history instead of the authors' nodes ("hf14": from HFgrid14, the authors' 2026 choice, control only); flip: boundary classes whose dip direction is reversed (sensitivity
     test of the copied directions, E-1120-05); dip_elev: continental and ocean-continent convergent faults dip toward
     the higher side (toward_higher, E-1120-06) instead of copying the authors' directions; weak: orogen names (or "all")
-    whose triangles get continuum friction OROGEN_CFRIC (rheology 1, file LR_orogen.dat; E-1120-07)"""
+    whose triangles get continuum friction OROGEN_CFRIC (rheology 1, file LR_set.dat; E-1120-07); fault_fric: (class,
+    fFric) pairs, faults of these classes get their own friction (rheologies 2, 3, ...; E-1121-03), the others keep the
+    default fFric"""
     lines, stree, scls, slen = earth_boundaries(inp, steps_fn)
     P, tri, bedges, nb = build(lines, H_FAULT_KM / refine / R_KM, H_PLATE_KM / refine / R_KM)
     P, tri, quads = cut_faults(P, tri, bedges)
@@ -446,12 +454,13 @@ def earth_grid(inp, steps_fn, out, refine=1.0, own_data=False, heat_rule=False, 
             sign = fsign[j] * (1.0 if near @ fnear[j] > 0 else -1.0)
         if cls in flip:
             sign = -sign
-        faults.append(((n1, n2, n3, n4), sign * dip, sign * dip))
+        lrs = [c for c, _ in fault_fric]
+        faults.append(((n1, n2, n3, n4), sign * dip, sign * dip, FAULT_LR0 + lrs.index(cls) if cls in lrs else 0))
         count[cls] = count.get(cls, 0) + 1
     q = np.array([f[0] for f in faults])
     bw0 = half_bandwidth(len(P), tri, q)
     P, tri, q = renumber(P, tri, q)
-    faults = [(tuple(int(x) for x in qq), d1, d2) for qq, (_, d1, d2) in zip(q, faults)]
+    faults = [(tuple(int(x) for x in qq), d1, d2, n) for qq, (_, d1, d2, n) in zip(q, faults)]
     bw = half_bandwidth(len(P), tri, q)
     os.makedirs(out, exist_ok=True)
     lon, lat = lonlat(P)
@@ -472,7 +481,8 @@ def earth_grid(inp, steps_fn, out, refine=1.0, own_data=False, heat_rule=False, 
     lr = None
     if weak:
         lr = weak_orogens(P, tri, os.path.join(os.path.dirname(steps_fn), OROGENS), weak)
-        write_lr(f"{inp}/iEarth5-049.in", f"{out}/LR_orogen.dat", OROGEN_CFRIC)
+    if weak or fault_fric:
+        write_lr(f"{inp}/iEarth5-049.in", f"{out}/LR_set.dat", OROGEN_CFRIC if weak else None, fault_fric)
     write_feg(f"{out}/Earth5R.feg", "Generated from PB2002 boundaries (tools/shells_grid.py, E-1119-17)", P, tri, faults,
               elev, heat, data, lr)
     # boundary conditions: footwall nodes in SHELLS' order; condition and plate-interior nodes from the authors' files
