@@ -8,7 +8,7 @@ surface, 1350 C below the lithosphere, with the 1350 C isotherm raised 10 km in 
 Force: left side free slip (symmetry), right side the lithostatic pressure of the far-field column minus a uniform
 tension F / 120 km over the lithosphere, so the force in excess of lithostatic is F; bottom open with the lithostatic
 pressure (in place of their Winkler foundation). Not included: elasticity, compressibility, shear heating (see
-PARAM_AUDIT 11.14). The opening velocity is the maximum velocity on the right boundary (ASPECT statistics).
+PARAM_AUDIT 11.15). The opening velocity is the maximum velocity on the right boundary (ASPECT statistics).
 Segments: a run stops at ASPECT_WALL_H hours with a checkpoint; if restart.zip from the previous segment is present in
 the code folder, the run resumes from it.
 Env: BRUNE_F (TN/m), ASPECT_END_MYR, ASPECT_WALL_H, ASPECT_SMOKE (1 = two short pieces, the second resumed from the
@@ -41,7 +41,7 @@ CP = 1200.0
 COHESION = 5e6
 MU0, MU1 = 0.5, 0.05                        # friction before and after softening over plastic strain 0..1
 G = 9.81
-T_REF_K = 273.15                            # density reference temperature = surface temperature (PARAM_AUDIT 11.14)
+T_REF_K = 273.15                            # density reference temperature = surface temperature (PARAM_AUDIT 11.15)
 DX_T = 1e3                                  # m, technical: spacing of the initial-temperature grid (half a cell)
 ETA_MIN, ETA_MAX = 1e18, 1e26               # Pa s, technical cut-offs of the ASPECT cookbook
 DT_MAX_YR = 20e3                            # technical: the cookbook's maximum time step
@@ -276,8 +276,6 @@ end
 subsection Termination criteria
   set Termination criteria = end time, wall time
   set Wall time = {wall_h:g}
-end
-subsection Time stepping
   set Checkpoint on termination = true
 end
 subsection Checkpointing
@@ -315,6 +313,7 @@ if resume:
     zipfile.ZipFile("restart.zip").extractall(OUT)
     res["resumed_from"] = sorted(os.listdir(OUT))
 if os.environ.get("ASPECT_INPUTS_ONLY") == "1":          # local check of the inputs, no ASPECT
+    open(f"{D}/brune.prm", "w").write(prm(END_MYR * 1e6, WALL_H, resume))
     json.dump(res, open(f"results/{TAG}_run.json", "w"), indent=1)
     raise SystemExit
 run("lscpu | grep -E '^CPU\\(s\\)|Model name'; free -g")
