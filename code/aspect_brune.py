@@ -53,6 +53,7 @@ CFL = 0.5
 NL_TOL, NL_MAX = 1e-4, 100                  # cookbook nonlinear solver settings
 VIZ_YR = 1e6
 VIZ_SMOKE_YR = 0                            # technical: a smoke run writes every step (0 = each step in ASPECT)
+VIZ_DIAG = os.environ.get("ASPECT_VIZ_EVERY_STEP") == "1"   # diagnostic resume: every step as in a smoke run
 CHECKPOINT_S = 1800
 FC_V0_MM_YR = 1.0                           # technical: right-side velocity of step 0, before any force is measured
 FC_EXPONENT = 1.0                           # technical: m in v_new = v_old (F / F_m)^m; stable without overshoot for
@@ -297,7 +298,7 @@ subsection Postprocess
   subsection Visualization
     set List of output variables = material properties, strain rate
     set Output format = vtu
-    set Time between graphical output = {VIZ_SMOKE_YR if SMOKE else VIZ_YR:g}
+    set Time between graphical output = {VIZ_SMOKE_YR if SMOKE or VIZ_DIAG else VIZ_YR:g}
     set Interpolate output = false
     subsection Material properties
       set List of material properties = density, viscosity
