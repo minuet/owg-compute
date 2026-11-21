@@ -50,6 +50,7 @@ DT_MAX_YR = 20e3                            # technical: the cookbook's maximum 
 CFL = 0.5
 NL_TOL, NL_MAX = 1e-4, 100                  # cookbook nonlinear solver settings
 VIZ_YR = 1e6
+VIZ_SMOKE_YR = 0                            # technical: a smoke run writes every step (0 = each step in ASPECT)
 CHECKPOINT_S = 1800
 RAMP_YR = 0.5e6                             # technical: the tension grows linearly from 0 to F over this time (files .0
                                             # without tension, .1 and .2 with; full force applied at t=0 to this
@@ -295,7 +296,7 @@ subsection Postprocess
   subsection Visualization
     set List of output variables = material properties, strain rate
     set Output format = vtu
-    set Time between graphical output = {VIZ_YR:g}
+    set Time between graphical output = {VIZ_SMOKE_YR if SMOKE else VIZ_YR:g}
     set Interpolate output = false
     subsection Material properties
       set List of material properties = density, viscosity
