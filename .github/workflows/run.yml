@@ -6,6 +6,8 @@ on:
       script: {required: true, type: string}
       args: {required: true, type: string}     # JSON list, as runner.py reads it
       name: {required: true, type: string}
+      restart_from: {required: false, type: string, default: ""}   # run id whose checkpoint to resume (chain.py)
+permissions: {actions: read, contents: read}
 run-name: ${{ inputs.name }}
 jobs:
   run:
@@ -23,6 +25,13 @@ jobs:
           echo 'deb [signed-by=/usr/share/keyrings/oneapi.gpg] https://apt.repos.intel.com/oneapi all main' | sudo tee /etc/apt/sources.list.d/oneAPI.list
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq intel-oneapi-compiler-fortran-2024.2 intel-oneapi-mkl-devel-2024.2 intel-oneapi-mpi-devel-2021.13 | tail -5
+      - name: Checkpoint of an earlier run (cloud/github/chain.py)
+        if: inputs.restart_from != ''
+        env: {GH_TOKEN: "${{ github.token }}", ID: "${{ inputs.restart_from }}"}
+        run: |
+          T=$(gh api repos/$GITHUB_REPOSITORY/actions/runs/$ID --jq .display_title)
+          gh run download $ID -R $GITHUB_REPOSITORY -n "$T" -D /tmp/rs && unzip -oq "/tmp/rs/$T.zip" '*_restart.zip' -d /tmp/rs
+          mv /tmp/rs/*_restart.zip code/restart.zip && ls -l code/restart.zip
       - run: python runner.py
         env: {RUN_SCRIPT: "${{ inputs.script }}", RUN_ARGS: "${{ inputs.args }}", RUN_NAME: "${{ inputs.name }}"}
       - uses: actions/upload-artifact@v4

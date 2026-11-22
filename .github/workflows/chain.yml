@@ -1,0 +1,22 @@
+# Continue a finished brune run from its checkpoint in the cloud (cloud/github/chain.py decides); by hand for tests.
+name: chain
+on:
+  workflow_run: {workflows: [run], types: [completed]}
+  workflow_dispatch:
+    inputs:
+      run_id: {required: true, type: string}
+      mode: {required: false, type: string, default: dry}   # dry: print only; smoke: continue smoke runs too; go
+permissions: {actions: write, contents: read}               # actions: write to dispatch run.yml
+jobs:
+  chain:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.workflow_run.display_title, 'brune-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15           # technical: the job takes about 1 min; stops a hung download
+    env: {GH_TOKEN: "${{ github.token }}", ID: "${{ inputs.run_id || github.event.workflow_run.id }}"}
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -q numpy
+      - run: |
+          T=$(gh api repos/$GITHUB_REPOSITORY/actions/runs/$ID --jq .display_title)
+          gh run download $ID -R $GITHUB_REPOSITORY -n "$T" -D dl && unzip -oq "dl/$T.zip" -d res
+          python chain.py res "$T" $ID ${{ inputs.mode }}
