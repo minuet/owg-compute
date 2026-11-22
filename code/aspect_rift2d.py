@@ -18,14 +18,17 @@ strain 0..1 (Brune M1). Changed from M1 so that strength and force come from one
     base of the lithosphere plus 30 km, as in M1 (120 + 30 km).
 Segments: as aspect_brune.py (checkpoint at ASPECT_WALL_H, restart.zip in the code folder resumes; chain.yml continues
 until tools/diag/rift2d_eval.py has a verdict).
-Env: R2D_Q (mW/m2), R2D_ZC, R2D_ZM (km), R2D_F (TN/m), ASPECT_END_MYR, ASPECT_WALL_H, ASPECT_SMOKE, ASPECT_INPUTS_ONLY.
+Env: R2D_Q (mW/m2), R2D_ZC, R2D_ZM (km), R2D_F (TN/m), ASPECT_END_MYR, ASPECT_WALL_H, ASPECT_SMOKE, ASPECT_INPUTS_ONLY,
+ASPECT_RESTART (restart file, default restart.zip).
 Output: results/<tag>_{run.json,out.txt,statistics,log.txt,restart.zip,viz.zip}"""
-import glob, json, math, os, re, shutil, subprocess, sys, time, zipfile
+import glob, json, math, os, re, shutil, subprocess, sys, threading, time, zipfile
 import numpy as np
 from scipy.sparse import coo_matrix
 from scipy.sparse.linalg import spsolve
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [HERE, os.path.join(HERE, "diag")]       # in the cloud the diag modules sit next to this file (pack.sh)
 import shells_rheology as sr
+from brune_m1_eval import V_FAST                         # 10 mm/yr, the verdict of tools/diag/rift2d_eval.py
 
 A = "/tmp/aspect"; B = "/tmp/aspect-build"; D = os.environ.get("ASPECT_DIR", "/tmp/run"); OUT = f"{D}/output"
 Q = float(os.environ.get("R2D_Q", "54"))                 # mW/m2
@@ -56,8 +59,10 @@ G = sr.G
 DX_T = 1e3                                    # m, technical (M1)
 ETA_MIN, ETA_MAX = 1e18, 1e26                 # M1
 DT_MAX_YR = 20e3; CFL = 0.5; NL_TOL, NL_MAX = 1e-4, 100     # M1
+CHEAP_STEPS = 4000                 # ASPECT continental_extension cookbook after v3.0.0 (M1 had 0: E-1122-03, PARAM_AUDIT 11.17)
 VIZ_YR = 1e6
 CHECKPOINT_S = 1800
+WATCH_S = 60                       # technical: how often the statistics are read for the fast phase (PARAM_AUDIT 11.17)
 FC_V0_MM_YR, FC_EXPONENT, FC_MAX_FACTOR = 1.0, 1.0, 2.0     # M1 (technical)
 PLUGIN = "/tmp/aspect-plugin/libaspect_force_controlled.so"
 
@@ -239,7 +244,7 @@ subsection Mesh refinement
 end
 subsection Solver parameters
   subsection Stokes solver parameters
-    set Number of cheap Stokes solver steps = 0
+    set Number of cheap Stokes solver steps = {CHEAP_STEPS}
     set Stokes solver type = block AMG
   end
   subsection Newton solver parameters
@@ -343,7 +348,7 @@ subsection Gravity model
   end
 end
 subsection Termination criteria
-  set Termination criteria = end time, wall time
+  set Termination criteria = end time, wall time, user request
   set Wall time = {wall_h:g}
   set Checkpoint on termination = true
 end
@@ -365,9 +370,40 @@ end
 """
 
 
+def watch(stop):
+    """Stop ASPECT once the opening velocity exceeds V_FAST: the verdict is then RIFT and later steps are not used, so
+    the rest of the segment would only cost machine time. ASPECT's "user request" criterion ends the run (with a
+    checkpoint) when the file terminate-aspect appears in the output directory."""
+    col = None
+    while not stop.wait(WATCH_S):
+        try:
+            lines = open(f"{OUT}/statistics").read().splitlines()
+            if col is None:
+                head = [l for l in lines if l.startswith("#")]
+                col = next(int(l[1:].split(":")[0]) - 1 for l in head
+                           if "Maximum velocity magnitude on boundary with indicator 1" in l)
+            if any(float(l.split()[col]) > V_FAST for l in lines if l and not l.startswith("#") and len(l.split()) > col):
+                open(f"{OUT}/terminate-aspect", "w").close()
+                print("fast phase reached: terminate-aspect written", flush=True)
+                return
+        except (OSError, StopIteration, ValueError):        # file not written yet or a line half written
+            pass
+
+
 def aspect(rh, end_yr, wall_h, resume):
     open(f"{D}/r2d.prm", "w").write(prm(rh, end_yr, wall_h, resume))
-    return run(f"export OMP_NUM_THREADS=1; $(ls /usr/bin/mpirun.openmpi 2>/dev/null || echo mpirun) --use-hwthread-cpus "
+    if os.path.exists(f"{OUT}/terminate-aspect"):
+        os.remove(f"{OUT}/terminate-aspect")
+    stop = threading.Event()
+    threading.Thread(target=watch, args=(stop,), daemon=True).start()
+    try:
+        return _aspect(wall_h)
+    finally:
+        stop.set()
+
+
+def _aspect(wall_h):
+    return run(f"export OMP_NUM_THREADS=1 OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1; $(ls /usr/bin/mpirun.openmpi 2>/dev/null || echo mpirun) --use-hwthread-cpus "
                f"-np 4 {EXE} r2d.prm >> out.txt 2>&1; e=$?; tail -15 out.txt; exit $e", cwd=D,
                timeout=int(wall_h * 3600 + 1200))
 
@@ -378,16 +414,18 @@ RH = rheology()
 res["inputs"] = write_inputs(RH)
 res["inputs_s"] = round(time.time() - t0, 1)
 print(json.dumps(res, indent=1), flush=True)
-resume = os.path.exists("restart.zip")
+RESTART = os.environ.get("ASPECT_RESTART", "restart.zip")   # Kaggle: a run's own restart file packed into the code
+resume = os.path.exists(RESTART)
 if resume:
-    zipfile.ZipFile("restart.zip").extractall(OUT)
+    zipfile.ZipFile(RESTART).extractall(OUT)
     res["resumed_from"] = sorted(os.listdir(OUT))
 if os.environ.get("ASPECT_INPUTS_ONLY") == "1":          # local check of the inputs, no ASPECT
     open(f"{D}/r2d.prm", "w").write(prm(RH, END_MYR * 1e6, WALL_H, resume))
     json.dump(res, open(f"results/{TAG}_run.json", "w"), indent=1)
     raise SystemExit
 run("lscpu | grep -E '^CPU\\(s\\)|Model name'; free -g")
-run("sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libdeal.ii-dev cmake "
+SUDO = "sudo " if os.geteuid() != 0 else ""          # GitHub runs as a user, Kaggle as root without sudo
+run(f"{SUDO}apt-get update -qq && {SUDO}DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libdeal.ii-dev cmake "
     "ninja-build 2>&1 | tail -3")
 run(f"git clone -q --depth 1 --branch v3.0.0 https://github.com/geodynamics/aspect.git {A}")
 run(f"cmake -S {A} -B {B} -G Ninja -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -3")
