@@ -15,13 +15,15 @@ d, title, rid = sys.argv[1:4]
 mode = sys.argv[4] if len(sys.argv) > 4 else ""
 run = json.load(open(glob.glob(f"{d}/*_run.json")[0]))
 F = run["F_TN_m"]
-with contextlib.redirect_stdout(io.StringIO()) as buf:
-    ev.main([d])
-print(buf.getvalue())
-why = ("smoke run" if run["smoke"] and mode != "smoke" else
+why = ("no ASPECT run" if not run.get("pieces") else
+       "smoke run" if run["smoke"] and mode != "smoke" else
        "an ASPECT piece failed" if any(p["exit"] != "0" for p in run["pieces"]) else
-       "already a continuation" if "-s2" in title else
-       "verdict already decided" if "UNDECIDED" not in buf.getvalue() else "")
+       "already a continuation" if "-s2" in title else "")
+if not why:
+    with contextlib.redirect_stdout(io.StringIO()) as buf:
+        ev.main([d])
+    print(buf.getvalue())
+    why = "verdict already decided" if "UNDECIDED" not in buf.getvalue() else ""
 if why:
     print(f"not continued: {why}")
     raise SystemExit
