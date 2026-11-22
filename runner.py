@@ -19,9 +19,14 @@ with open(f"{R}/{NAME}.log", "w") as f:
     env.update(dict(a[4:].split("=", 1) for a in ARGS if a.startswith("ENV:")))
     code = subprocess.run([sys.executable, SCRIPT] + [a for a in ARGS if not a.startswith("ENV:")], cwd=C, env=env,
                           stdout=f, stderr=subprocess.STDOUT).returncode
+files = [fn for fn in set(glob.glob(R + "/*")) - before | {f"{R}/{NAME}.log"} if os.path.isfile(fn)]
+big = [fn for fn in files if os.path.getsize(fn) >= 2e8]
+with open(f"{R}/{NAME}.log", "a") as f:     # say so in the downloaded log instead of dropping files silently
+    for fn in big:
+        f.write(f"\nNOT PACKED (too large): {os.path.basename(fn)} {os.path.getsize(fn) / 1e6:.0f} MB\n")
 with zipfile.ZipFile(f"{O}/{NAME}.zip", "w", zipfile.ZIP_DEFLATED) as z:
-    for fn in set(glob.glob(R + "/*")) - before | {f"{R}/{NAME}.log"}:
-        if os.path.isfile(fn) and os.path.getsize(fn) < 2e8:
+    for fn in files:
+        if fn not in big:
             z.write(fn, os.path.basename(fn))
 print(open(f"{R}/{NAME}.log").read()[-3000:])
 sys.exit(code)

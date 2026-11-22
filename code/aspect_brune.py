@@ -5,12 +5,12 @@ Set-up (Methods): 500 x 150 km box, 2 km cells; 25 km wet-quartzite upper crust,
 dry-olivine mantle lithosphere to 120 km, wet-olivine asthenosphere; diffusion + dislocation creep, Drucker-Prager
 plasticity with friction softening 0.5 -> 0.05 over plastic strain 0..1; free surface; steady initial geotherm 0 C at the
 surface, 1350 C below the lithosphere, with the 1350 C isotherm raised 10 km in a 20 km wide triangle at the centre.
-Force: left side fixed (zero velocity: horizontal by symmetry, vertical because with an open bottom nothing else
-stops the box from moving up or down as a whole - ASPECT's free-surface stabilization scales with the time step, which
-is 0 at step 0, so with free slip the first Stokes solve fails with NaN), right side a rigid plate end: one
-horizontal velocity at all depths (vertical free), rescaled every step so that the force in excess of lithostatic
-stays at F (plugin tools/aspect_force_controlled.cc); bottom open with the lithostatic pressure (in place of their
-Winkler foundation). A uniform tension on the right side instead (smoke runs 1-5) pulled the weak base of the
+Force: left side free slip (symmetry plane), right side a rigid plate end: one horizontal velocity at all depths
+(vertical free), rescaled every step so that the force in excess of lithostatic stays at F (plugin
+tools/aspect_force_controlled.cc); bottom inflow v H / L upward with free tangential slip, balancing the outflow, as in
+the ASPECT continental_extension cookbook (in place of their Winkler foundation). An open bottom with the lithostatic
+pressure and a fixed left side (brune-9d) let the box rock about the left wall, growing until the run failed at 2.79 Myr
+(E-1121-25). A uniform tension on the right side instead (smoke runs 1-5) pulled the weak base of the
 lithosphere out of the box at > 100 mm/yr with 4 % of F applied (E-1121-25). Not included: elasticity, compressibility, shear heating (see
 PARAM_AUDIT 11.15). The opening velocity is the maximum velocity on the right boundary (ASPECT statistics).
 Segments: a run stops at ASPECT_WALL_H hours with a checkpoint; if restart.zip from the previous segment is present in
@@ -129,8 +129,6 @@ def write_inputs():
             for i in range(len(x)):
                 f.write(f"{x[i]:.0f} {y[j]:.0f} {t[j, i] + 273.15:.3f}\n")
     p = lithostatic(d, t[:, -1])                           # far-field column at the right side
-    with open(f"{D}/brune_traction_bottom.txt", "w") as f:
-        f.write(f"# POINTS: 2\n# x pressure\n0 {p[-1]:.6e}\n{X_KM * 1e3:.0f} {p[-1]:.6e}\n")
     names = ("uc", "lc", "sm", "wm")
     moho = int(MOHO_KM * 1e3 / DX_T)
     return {"T_moho_far_C": round(float(t[moho, -1]), 1), "T_moho_centre_C": round(float(t[moho, len(x) // 2]), 1),
@@ -191,21 +189,14 @@ subsection Mesh deformation
   end
 end
 subsection Boundary velocity model
-  set Zero velocity boundary indicators = left
-  set Prescribed velocity boundary indicators = right x: force controlled
+  set Tangential velocity boundary indicators = left
+  set Prescribed velocity boundary indicators = right x: force controlled, bottom y: force controlled
   subsection Force controlled
     set Boundary = right
     set Force = {F * 1e12:g}
     set Initial velocity = {FC_V0_MM_YR / 1e3:g}
     set Exponent = {FC_EXPONENT:g}
     set Maximum factor = {FC_MAX_FACTOR:g}
-  end
-end
-subsection Boundary traction model
-  set Prescribed traction boundary indicators = bottom: ascii data
-  subsection Ascii data model
-    set Data directory = {D}/
-    set Data file name = brune_traction_%s.txt
   end
 end
 subsection Compositional fields

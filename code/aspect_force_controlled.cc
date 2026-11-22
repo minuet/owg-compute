@@ -8,11 +8,16 @@
    = integral of 2 eta (eps_xx - eps_yy) dy, the definition of Brune et al.'s analytical model (tau = F / 2D).
    The pressure cancels, so F_m does not depend on the free-surface height at the wall. Only v_old is state, and it is
    read back from the solution (mean boundary velocity), so a restart from a checkpoint needs nothing extra.
+   The same plugin also gives the bottom inflow (y component, used as "bottom y: force controlled"): the material
+   leaving through the right side, v times the box height, comes in uniformly through the bottom, v_y = v H / L, as in
+   the ASPECT continental_extension cookbook. This fixes the box vertically; with an open bottom and only the left wall
+   holding it, the box rocked about that wall and the rocking grew until the run failed (brune-9d, E-1121-25).
    Parameters and their derivation: PARAM_AUDIT 11.15. */
 #include <aspect/boundary_velocity/interface.h>
 #include <aspect/simulator_access.h>
 #include <aspect/material_model/interface.h>
 #include <aspect/global.h>
+#include <aspect/geometry_model/box.h>
 #include <deal.II/fe/fe_values.h>
 #include <deal.II/base/quadrature_lib.h>
 #include <algorithm>
@@ -32,6 +37,9 @@ namespace aspect
         {
           const types::boundary_id bid =
             this->get_geometry_model().translate_symbolic_boundary_name_to_id(boundary_name);
+          const auto *box = dynamic_cast<const GeometryModel::Box<dim> *>(&this->get_geometry_model());
+          AssertThrow(box != nullptr, ExcMessage("force controlled needs the box geometry"));
+          inflow_ratio = box->get_extents()[dim-1] / box->get_extents()[0];
           if (this->get_timestep_number() == 0 || this->get_timestep_number() == numbers::invalid_unsigned_int)
             {
               velocity = initial_velocity;
@@ -81,6 +89,7 @@ namespace aspect
         {
           Tensor<1,dim> u;
           u[0] = velocity;
+          u[dim-1] = velocity * inflow_ratio;     // bottom inflow; the right side uses only u[0]
           return u;
         }
 
@@ -112,7 +121,7 @@ namespace aspect
 
       private:
         std::string boundary_name;
-        double target_force, initial_velocity, exponent, max_factor, velocity = 0;
+        double target_force, initial_velocity, exponent, max_factor, velocity = 0, inflow_ratio = 0;
     };
   }
 }
