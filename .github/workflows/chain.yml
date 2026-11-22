@@ -9,7 +9,7 @@ on:
 permissions: {actions: write, contents: read}               # actions: write to dispatch run.yml
 jobs:
   chain:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.workflow_run.display_title, 'brune-')
+    if: github.event_name == 'workflow_dispatch' || (startsWith(github.event.workflow_run.display_title, 'brune-') || startsWith(github.event.workflow_run.display_title, 'r2d-'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15           # technical: the job takes about 1 min; stops a hung download
     env: {GH_TOKEN: "${{ github.token }}", ID: "${{ inputs.run_id || github.event.workflow_run.id }}"}
