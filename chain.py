@@ -21,6 +21,9 @@ d, title, rid = sys.argv[1:4]
 mode = sys.argv[4] if len(sys.argv) > 4 else ""
 run = json.load(open(glob.glob(f"{d}/*_run.json")[0]))
 rift2d = run.get("script") == "aspect_rift2d.py"
+if run.get("script") not in (None, "aspect_rift2d.py"):   # aspect_brune.py runs carry no "script"; others have no chain
+    print(f"not continued: no chain for {run['script']}")
+    raise SystemExit
 m = re.search(r"-s(\d+)$", title)
 seg, base = (int(m.group(1)), title[:m.start()]) if m else (1, title)
 why = ("no ASPECT run" if not run.get("pieces") else
