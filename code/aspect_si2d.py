@@ -128,7 +128,7 @@ def prm(end_yr, wall_h, resume):
               f"{TZ_STRAIN:g}, 0)"
               if TF == "strain" else "0")
     contact = f"x>={X_END * 1e3:g}"
-    crust = f"d<{CRUST_KM * 1e3:g} && !({in_tf}) && !({contact})"
+    crust = f"d<{CRUST_KM * 1e3:g} && ({in_tf})==0 && ({contact})==0"   # muparser has no "!"
     push = (f"x>={PUSH_X[0] * 1e3:g} && x<={PUSH_X[1] * 1e3:g} && d>={PUSH_Z[0] * 1e3:g} && "
             f"d<={PUSH_Z[1] * 1e3:g}")
     pts = ";".join(f"{x * 1e3:g},{(Y_KM - z) * 1e3:g}" for z in np.arange(PV_Z[0], PV_Z[1] + 1e-9, PV_Z[2])
