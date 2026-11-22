@@ -60,6 +60,7 @@ DX_T = 1e3                                    # m, technical (M1)
 ETA_MIN, ETA_MAX = 1e18, 1e26                 # M1
 DT_MAX_YR = 20e3; CFL = 0.5; NL_TOL, NL_MAX = 1e-4, 100     # M1
 CHEAP_STEPS = 4000                 # ASPECT continental_extension cookbook after v3.0.0 (M1 had 0: E-1122-03, PARAM_AUDIT 11.17)
+EXPENSIVE_STEPS, GMRES_RESTART = 5000, 200   # ASPECT crustal_deformation cookbook: the default 1000/50 stopped near convergence (PARAM_AUDIT 11.20)
 VIZ_YR = 1e6
 CHECKPOINT_S = 1800
 WATCH_S = 60                       # technical: how often the statistics are read for the fast phase (PARAM_AUDIT 11.17)
@@ -246,6 +247,8 @@ subsection Solver parameters
   subsection Stokes solver parameters
     set Number of cheap Stokes solver steps = {CHEAP_STEPS}
     set Stokes solver type = block AMG
+    set Maximum number of expensive Stokes solver steps = {EXPENSIVE_STEPS}
+    set GMRES solver restart length = {GMRES_RESTART}
   end
   subsection Newton solver parameters
     set Maximum linear Stokes solver tolerance = 1e-2

@@ -58,6 +58,7 @@ C_RIGID = 1e12                     # Pa, technical: "no plasticity" in the push 
 G = 9.81
 DT_MAX_YR = 20e3; CFL = 0.5; NL_TOL, NL_MAX = 1e-4, 100     # as aspect_rift2d.py (Brune M1)
 CHEAP_STEPS = 4000                 # as aspect_rift2d.py (E-1122-03)
+EXPENSIVE_STEPS, GMRES_RESTART = 5000, 200   # ASPECT crustal_deformation cookbook: the default 1000/50 stopped near convergence (PARAM_AUDIT 11.20)
 PV_YR, VIZ_YR = 0.25e6, 0.5e6      # technical: output intervals
 PV_X, PV_Z = (100.0, 300.0, 4.0), (10.0, 100.0, 3.0)   # km: point-value grid (start, end, step), technical
 CHECKPOINT_S = 1800
@@ -140,7 +141,7 @@ set Start time = 0
 set End time = {end_yr:g}
 set Use years in output instead of seconds = true
 set Resume computation = {'true' if resume else 'false'}
-set Nonlinear solver scheme = single Advection, iterated defect correction Stokes
+set Nonlinear solver scheme = iterated Advection and Newton Stokes   # Picard stalled near 1e-2 (PARAM_AUDIT 11.20); Newton parameters at ASPECT defaults
 set Nonlinear solver tolerance = {NL_TOL:g}
 set Max nonlinear iterations = {NL_MAX}
 set CFL number = {CFL}
@@ -180,6 +181,8 @@ subsection Solver parameters
   subsection Stokes solver parameters
     set Number of cheap Stokes solver steps = {CHEAP_STEPS}
     set Stokes solver type = block AMG
+    set Maximum number of expensive Stokes solver steps = {EXPENSIVE_STEPS}
+    set GMRES solver restart length = {GMRES_RESTART}
   end
   subsection Newton solver parameters
     set Maximum linear Stokes solver tolerance = 1e-2
