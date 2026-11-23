@@ -1,0 +1,18 @@
+# Every 30 min: continue chained runs whose chain.yml never fired (cloud/github/sweep.py); by hand for tests.
+name: sweep
+on:
+  schedule: [{cron: "*/30 * * * *"}]   # technical: a segment lasts about 6 h, so a check every 30 min loses little (PARAM_AUDIT 11.20)
+  workflow_dispatch:
+    inputs:
+      mode: {required: false, type: string, default: dry}   # dry: print only; go
+permissions: {actions: write, contents: read}               # actions: write to dispatch run.yml
+concurrency: {group: sweep}                                   # never two sweeps at once (no double continuation)
+jobs:
+  sweep:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30           # technical: a few downloads of about 75 MB each; stops a hung one
+    env: {GH_TOKEN: "${{ github.token }}"}
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -q numpy
+      - run: python sweep.py ${{ inputs.mode == 'dry' && 'dry' || '' }}
