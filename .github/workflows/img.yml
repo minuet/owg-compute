@@ -1,0 +1,26 @@
+# One tool run inside a given container image, to test a tool on another system before a long run there
+# (2026-11-23: the Kaggle TPU machines run on the Debian image python:3.12, the CPU machines on Ubuntu 24.04).
+# Dispatched by hand: gh workflow run img.yml -f script=... -f args='[...]' -f name=... [-f image=...]
+name: img
+on:
+  workflow_dispatch:
+    inputs:
+      script: {required: true, type: string}
+      args: {required: true, type: string}     # JSON list, as runner.py reads it
+      name: {required: true, type: string}
+      image: {required: false, type: string, default: "python:3.12"}   # base image of Kaggle's TPU image (Kaggle/docker-python tpu/config.txt)
+permissions: {actions: read, contents: read}
+run-name: ${{ inputs.name }}
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    container: ${{ inputs.image }}
+    timeout-minutes: 120          # technical: a build-and-smoke test, about 40 min on Kaggle's 4 threads
+    steps:
+      - uses: actions/checkout@v4
+      - run: cat /etc/os-release && pip install -q numpy scipy
+      - run: python runner.py
+        env: {RUN_SCRIPT: "${{ inputs.script }}", RUN_ARGS: "${{ inputs.args }}", RUN_NAME: "${{ inputs.name }}"}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: "${{ inputs.name }}", path: out/, retention-days: 7}

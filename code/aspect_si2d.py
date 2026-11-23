@@ -20,7 +20,9 @@ Transform fault (SI_TF):
 Output: point values of the two crusts on a grid around the fault every 0.25 Myr (tools/diag/si2d_eval.py gives the
 polarity), statistics, visualization every 0.5 Myr.
 Env: SI_AY, SI_AO (Myr), SI_TF, SI_SCHEME (ASPECT nonlinear solver scheme), SI_NEWTON_SWITCH, SI_DAMPER, SI_CELL_KM
-(solver tests), ASPECT_END_MYR, ASPECT_WALL_H, ASPECT_SMOKE, ASPECT_INPUTS_ONLY, ASPECT_RESTART.
+(solver tests), SI_NP (MPI processes, default 4), ASPECT_END_MYR, ASPECT_WALL_H, ASPECT_SMOKE, ASPECT_INPUTS_ONLY,
+ASPECT_RESTART, ASPECT_BUILD (all: build and run; only: build and stop; skip: use the build of an earlier call, as
+tools/si2d_batch.py does to run several cases at once on one large machine).
 Output: results/<tag>_{run.json,out.txt,statistics,point_values.txt,log.txt,restart.zip,viz.zip}
 All numbers: PARAM_AUDIT 11.19."""
 import glob, json, math, os, re, shutil, subprocess, sys, time, zipfile
@@ -39,7 +41,9 @@ TAG = f"si2d_ay{AY:g}_ao{AO:g}_tf{TF}"
 SCHEME = os.environ.get("SI_SCHEME", "single Advection, iterated defect correction Stokes")   # as aspect_rift2d.py; Newton test (PARAM_AUDIT 11.20)
 NEWTON_SWITCH = os.environ.get("SI_NEWTON_SWITCH")   # solver test: Picard until this residual, then Newton (PARAM_AUDIT 11.20)
 DAMPER = os.environ.get("SI_DAMPER")                 # solver test: plastic damper viscosity, Pa s (PARAM_AUDIT 11.20)
-ENV_KEYS = ("SI_AY", "SI_AO", "SI_TF", "SI_SCHEME", "SI_NEWTON_SWITCH", "SI_DAMPER", "SI_CELL_KM", "ASPECT_END_MYR", "ASPECT_WALL_H")
+NP = int(os.environ.get("SI_NP", "4"))            # technical: the 4 cores of a GitHub/Kaggle CPU machine (PARAM_AUDIT 11.20)
+BUILD = os.environ.get("ASPECT_BUILD", "all")
+ENV_KEYS = ("SI_AY", "SI_AO", "SI_TF", "SI_SCHEME", "SI_NEWTON_SWITCH", "SI_DAMPER", "SI_CELL_KM", "SI_NP", "ASPECT_END_MYR", "ASPECT_WALL_H")
 
 MYR = 3.15576e13                   # s (Julian year, ASPECT's year_in_seconds)
 R_GAS = 8.31                       # ZZL Table 1
@@ -298,8 +302,8 @@ end
 
 
 def _aspect(wall_h):
-    return run(f"export OMP_NUM_THREADS=1 OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1; $(ls /usr/bin/mpirun.openmpi 2>/dev/null || echo mpirun) --use-hwthread-cpus "
-               f"-np 4 {EXE} si2d.prm >> out.txt 2>&1; e=$?; tail -15 out.txt; exit $e", cwd=D,
+    return run(f"export OMP_NUM_THREADS=1 OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1; $(ls /usr/bin/mpirun.openmpi 2>/dev/null || echo mpirun) --use-hwthread-cpus --bind-to none "
+               f"-np {NP} {EXE} si2d.prm >> out.txt 2>&1; e=$?; tail -15 out.txt; exit $e", cwd=D,
                timeout=int(wall_h * 3600 + 1200))
 
 
@@ -318,23 +322,26 @@ if os.environ.get("ASPECT_INPUTS_ONLY") == "1":          # local check of the in
     json.dump(res, open(f"results/{TAG}_run.json", "w"), indent=1)
     raise SystemExit
 run("lscpu | grep -E '^CPU\\(s\\)|Model name'; free -g")
-SUDO = "sudo " if os.geteuid() != 0 else ""          # GitHub runs as a user, Kaggle as root without sudo
-run(f"{SUDO}apt-get update -qq && {SUDO}DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libdeal.ii-dev cmake "
-    "ninja-build 2>&1 | tail -3")
-run(f"git clone -q --depth 1 --branch v3.0.0 https://github.com/geodynamics/aspect.git {A}")
-run(f"cmake -S {A} -B {B} -G Ninja -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -3")
-_, _, res["build_s"] = run(f"ninja -C {B} -j 4 2>&1 | tail -3")
-P = os.path.dirname(PLUGIN)
-os.makedirs(P, exist_ok=True)
-shutil.copy(f"{A}/cookbooks/prescribed_velocity/prescribed_velocity.cc", P)
-open(P + "/CMakeLists.txt", "w").write(
-    "CMAKE_MINIMUM_REQUIRED(VERSION 3.13.4)\nFIND_PACKAGE(Aspect 3.0.0 REQUIRED HINTS " + B + ")\n"
-    "DEAL_II_INITIALIZE_CACHED_VARIABLES()\nPROJECT(prescribed_velocity)\n"
-    "ADD_LIBRARY(prescribed_velocity SHARED prescribed_velocity.cc)\nASPECT_SETUP_PLUGIN(prescribed_velocity)\n")
-run(f"cd {P} && cmake -G Ninja . 2>&1 | tail -3 && ninja 2>&1 | tail -5 && ls *.so")
-so = glob.glob(P + "/*.so")
-if so and so[0] != PLUGIN:
-    shutil.copy(so[0], PLUGIN)
+if BUILD != "skip":
+    SUDO = "sudo " if os.geteuid() != 0 else ""          # GitHub runs as a user, Kaggle as root without sudo
+    run(f"{SUDO}apt-get update -qq && {SUDO}DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libdeal.ii-dev cmake "
+        "ninja-build 2>&1 | tail -3")
+    run(f"git clone -q --depth 1 --branch v3.0.0 https://github.com/geodynamics/aspect.git {A}")
+    run(f"cmake -S {A} -B {B} -G Ninja -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -3")
+    _, _, res["build_s"] = run(f"ninja -C {B} -j {os.cpu_count()} 2>&1 | tail -3")
+    P = os.path.dirname(PLUGIN)
+    os.makedirs(P, exist_ok=True)
+    shutil.copy(f"{A}/cookbooks/prescribed_velocity/prescribed_velocity.cc", P)
+    open(P + "/CMakeLists.txt", "w").write(
+        "CMAKE_MINIMUM_REQUIRED(VERSION 3.13.4)\nFIND_PACKAGE(Aspect 3.0.0 REQUIRED HINTS " + B + ")\n"
+        "DEAL_II_INITIALIZE_CACHED_VARIABLES()\nPROJECT(prescribed_velocity)\n"
+        "ADD_LIBRARY(prescribed_velocity SHARED prescribed_velocity.cc)\nASPECT_SETUP_PLUGIN(prescribed_velocity)\n")
+    run(f"cd {P} && cmake -G Ninja . 2>&1 | tail -3 && ninja 2>&1 | tail -5 && ls *.so")
+    so = glob.glob(P + "/*.so")
+    if so and so[0] != PLUGIN:
+        shutil.copy(so[0], PLUGIN)
+if BUILD == "only":
+    raise SystemExit
 EXE = f"{B}/aspect-release" if os.path.exists(f"{B}/aspect-release") else f"{B}/aspect"
 pieces = [(SMOKE_WALL_H, resume), (SMOKE_WALL_H, True)] if SMOKE else [(WALL_H, resume)]
 res["pieces"] = []
