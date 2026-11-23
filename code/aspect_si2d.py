@@ -141,7 +141,7 @@ set Start time = 0
 set End time = {end_yr:g}
 set Use years in output instead of seconds = true
 set Resume computation = {'true' if resume else 'false'}
-set Nonlinear solver scheme = iterated Advection and Newton Stokes   # Picard stalled near 1e-2 (PARAM_AUDIT 11.20); Newton parameters at ASPECT defaults
+set Nonlinear solver scheme = single Advection, iterated defect correction Stokes   # as aspect_rift2d.py; Newton diverged at step 0 (PARAM_AUDIT 11.20)
 set Nonlinear solver tolerance = {NL_TOL:g}
 set Max nonlinear iterations = {NL_MAX}
 set CFL number = {CFL}
@@ -230,6 +230,7 @@ subsection Boundary temperature model
 end
 subsection Material model
   set Model name = visco plastic
+  set Material averaging = harmonic average only viscosity   # ASPECT cookbooks (PARAM_AUDIT 11.20)
   subsection Visco Plastic
     set Reference temperature = {T_SURF:g}
     set Minimum strain rate = 1.e-20
@@ -241,6 +242,7 @@ subsection Material model
     set Densities = {lst(rho)}
     set Thermal expansivities = {ALPHA:g}
     set Viscosity averaging scheme = harmonic
+    set Use adiabatic pressure in plasticity = true   # ZZL eq. 2: yield stress C + mu rho g z (PARAM_AUDIT 11.20)
     set Viscous flow law = dislocation
     set Prefactors for dislocation creep = {creep_prefactor():.6g}
     set Stress exponents for dislocation creep = {N_CR:g}
