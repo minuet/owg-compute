@@ -36,7 +36,9 @@ SMOKE = os.environ.get("ASPECT_SMOKE") == "1"
 SMOKE_WALL_H = 0.1                 # technical: each smoke piece stops after 6 min (as aspect_rift2d.py)
 TAG = f"si2d_ay{AY:g}_ao{AO:g}_tf{TF}"
 SCHEME = os.environ.get("SI_SCHEME", "single Advection, iterated defect correction Stokes")   # as aspect_rift2d.py; Newton test (PARAM_AUDIT 11.20)
-ENV_KEYS = ("SI_AY", "SI_AO", "SI_TF", "SI_SCHEME", "ASPECT_END_MYR", "ASPECT_WALL_H")
+NEWTON_SWITCH = os.environ.get("SI_NEWTON_SWITCH")   # solver test: Picard until this residual, then Newton (PARAM_AUDIT 11.20)
+DAMPER = os.environ.get("SI_DAMPER")                 # solver test: plastic damper viscosity, Pa s (PARAM_AUDIT 11.20)
+ENV_KEYS = ("SI_AY", "SI_AO", "SI_TF", "SI_SCHEME", "SI_NEWTON_SWITCH", "SI_DAMPER", "ASPECT_END_MYR", "ASPECT_WALL_H")
 
 MYR = 3.15576e13                   # s (Julian year, ASPECT's year_in_seconds)
 R_GAS = 8.31                       # ZZL Table 1
@@ -188,6 +190,7 @@ subsection Solver parameters
   subsection Newton solver parameters
     set Maximum linear Stokes solver tolerance = 1e-2
     set Use Eisenstat Walker method for Picard iterations = true
+{f"    set Nonlinear Newton solver switch tolerance = {NEWTON_SWITCH}{chr(10)}    set Max pre-Newton nonlinear iterations = {NL_MAX}" if NEWTON_SWITCH else ""}
   end
 end
 subsection Mesh deformation
@@ -256,6 +259,7 @@ subsection Material model
     set End plasticity strain weakening intervals = {EPS_F:g}
     set Cohesion strain weakening factors = {lst(cw)}
     set Friction strain weakening factors = {lst(fw)}
+{f"    set Use plastic damper = true{chr(10)}    set Plastic damper viscosity = {DAMPER}" if DAMPER else ""}
   end
 end
 subsection Gravity model
