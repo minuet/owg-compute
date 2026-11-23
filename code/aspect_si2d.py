@@ -19,7 +19,7 @@ Transform fault (SI_TF):
            depth-averaged strengths of Pacific fracture zones being 1..10 MPa, around 4.
 Output: point values of the two crusts on a grid around the fault every 0.25 Myr (tools/diag/si2d_eval.py gives the
 polarity), statistics, visualization every 0.5 Myr.
-Env: SI_AY, SI_AO (Myr), SI_TF, ASPECT_END_MYR, ASPECT_WALL_H, ASPECT_SMOKE, ASPECT_INPUTS_ONLY, ASPECT_RESTART.
+Env: SI_AY, SI_AO (Myr), SI_TF, SI_SCHEME (ASPECT nonlinear solver scheme), ASPECT_END_MYR, ASPECT_WALL_H, ASPECT_SMOKE, ASPECT_INPUTS_ONLY, ASPECT_RESTART.
 Output: results/<tag>_{run.json,out.txt,statistics,point_values.txt,log.txt,restart.zip,viz.zip}
 All numbers: PARAM_AUDIT 11.19."""
 import glob, json, math, os, re, shutil, subprocess, sys, time, zipfile
@@ -35,7 +35,8 @@ WALL_H = float(os.environ.get("ASPECT_WALL_H", "5.3"))
 SMOKE = os.environ.get("ASPECT_SMOKE") == "1"
 SMOKE_WALL_H = 0.1                 # technical: each smoke piece stops after 6 min (as aspect_rift2d.py)
 TAG = f"si2d_ay{AY:g}_ao{AO:g}_tf{TF}"
-ENV_KEYS = ("SI_AY", "SI_AO", "SI_TF", "ASPECT_END_MYR", "ASPECT_WALL_H")
+SCHEME = os.environ.get("SI_SCHEME", "single Advection, iterated defect correction Stokes")   # as aspect_rift2d.py; Newton test (PARAM_AUDIT 11.20)
+ENV_KEYS = ("SI_AY", "SI_AO", "SI_TF", "SI_SCHEME", "ASPECT_END_MYR", "ASPECT_WALL_H")
 
 MYR = 3.15576e13                   # s (Julian year, ASPECT's year_in_seconds)
 R_GAS = 8.31                       # ZZL Table 1
@@ -141,7 +142,7 @@ set Start time = 0
 set End time = {end_yr:g}
 set Use years in output instead of seconds = true
 set Resume computation = {'true' if resume else 'false'}
-set Nonlinear solver scheme = single Advection, iterated defect correction Stokes   # as aspect_rift2d.py; Newton diverged at step 0 (PARAM_AUDIT 11.20)
+set Nonlinear solver scheme = {SCHEME}
 set Nonlinear solver tolerance = {NL_TOL:g}
 set Max nonlinear iterations = {NL_MAX}
 set CFL number = {CFL}
