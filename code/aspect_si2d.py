@@ -19,7 +19,8 @@ Transform fault (SI_TF):
            depth-averaged strengths of Pacific fracture zones being 1..10 MPa, around 4.
 Output: point values of the two crusts on a grid around the fault every 0.25 Myr (tools/diag/si2d_eval.py gives the
 polarity), statistics, visualization every 0.5 Myr.
-Env: SI_AY, SI_AO (Myr), SI_TF, SI_SCHEME (ASPECT nonlinear solver scheme), ASPECT_END_MYR, ASPECT_WALL_H, ASPECT_SMOKE, ASPECT_INPUTS_ONLY, ASPECT_RESTART.
+Env: SI_AY, SI_AO (Myr), SI_TF, SI_SCHEME (ASPECT nonlinear solver scheme), SI_NEWTON_SWITCH, SI_DAMPER, SI_CELL_KM
+(solver tests), ASPECT_END_MYR, ASPECT_WALL_H, ASPECT_SMOKE, ASPECT_INPUTS_ONLY, ASPECT_RESTART.
 Output: results/<tag>_{run.json,out.txt,statistics,point_values.txt,log.txt,restart.zip,viz.zip}
 All numbers: PARAM_AUDIT 11.19."""
 import glob, json, math, os, re, shutil, subprocess, sys, time, zipfile
@@ -38,11 +39,12 @@ TAG = f"si2d_ay{AY:g}_ao{AO:g}_tf{TF}"
 SCHEME = os.environ.get("SI_SCHEME", "single Advection, iterated defect correction Stokes")   # as aspect_rift2d.py; Newton test (PARAM_AUDIT 11.20)
 NEWTON_SWITCH = os.environ.get("SI_NEWTON_SWITCH")   # solver test: Picard until this residual, then Newton (PARAM_AUDIT 11.20)
 DAMPER = os.environ.get("SI_DAMPER")                 # solver test: plastic damper viscosity, Pa s (PARAM_AUDIT 11.20)
-ENV_KEYS = ("SI_AY", "SI_AO", "SI_TF", "SI_SCHEME", "SI_NEWTON_SWITCH", "SI_DAMPER", "ASPECT_END_MYR", "ASPECT_WALL_H")
+ENV_KEYS = ("SI_AY", "SI_AO", "SI_TF", "SI_SCHEME", "SI_NEWTON_SWITCH", "SI_DAMPER", "SI_CELL_KM", "ASPECT_END_MYR", "ASPECT_WALL_H")
 
 MYR = 3.15576e13                   # s (Julian year, ASPECT's year_in_seconds)
 R_GAS = 8.31                       # ZZL Table 1
 X_KM, Y_KM, CELL_KM = 360.0, 110.0, 1.0       # ZZL: 360 x 120 km with 10 km sticky water, 1 km grid
+CELL_KM = float(os.environ.get("SI_CELL_KM", CELL_KM))   # solver test: coarser grid (PARAM_AUDIT 11.20)
 X_TF, X_END = 180.0, 330.0                    # ZZL Fig. 2: plate contact, right end of the old plate
 CRUST_KM = 7.0                                # ZZL
 PUSH_X, PUSH_Z = (300.0, 310.0), (7.0, 20.0)  # ZZL Fig. 2 (read off the figure)
