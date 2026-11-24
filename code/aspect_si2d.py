@@ -34,7 +34,7 @@ AY = float(os.environ.get("SI_AY", "27.5"))               # Myr, ZZL reference c
 AO = float(os.environ.get("SI_AO", "49"))
 TF = os.environ.get("SI_TF", "none")
 END_MYR = float(os.environ.get("ASPECT_END_MYR", "5"))
-WALL_H = float(os.environ.get("ASPECT_WALL_H", "5.3"))
+WALL_H = float(os.environ.get("ASPECT_WALL_H", "4.0"))
 KILL_GRACE_S = 600                 # technical: hard stop this long after WALL_H, so packing and upload fit (PARAM_AUDIT 11.17)
 SMOKE = os.environ.get("ASPECT_SMOKE") == "1"
 SMOKE_WALL_H = 0.1                 # technical: each smoke piece stops after 6 min (as aspect_rift2d.py)
