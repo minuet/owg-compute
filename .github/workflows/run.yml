@@ -21,6 +21,7 @@ jobs:
         with: {python-version: "3.12"}
       - run: pip install -q numpy scipy matplotlib pygplates==1.0.0
       - name: Intel oneAPI (same pinned packages as shells_earth_flow.shellset_build, which needs root for them)
+        if: startsWith(inputs.script, 'shells_')   # only shells_earth_flow and shells_feg_test use it; skipped for ASPECT runs, whose apt mirror can be slow (2026-11-24)
         run: |
           wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor | sudo tee /usr/share/keyrings/oneapi.gpg > /dev/null
           echo 'deb [signed-by=/usr/share/keyrings/oneapi.gpg] https://apt.repos.intel.com/oneapi all main' | sudo tee /etc/apt/sources.list.d/oneAPI.list
