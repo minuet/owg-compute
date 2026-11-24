@@ -65,6 +65,9 @@ EXPENSIVE_STEPS, GMRES_RESTART = 5000, 200   # ASPECT crustal_deformation cookbo
 VIZ_YR = 1e6
 CHECKPOINT_S = 1800
 SMOKE_CHECKPOINT_S = 60          # technical: smoke pieces are killed after minutes, so the resume test needs earlier checkpoints
+PACK_POLL_S = 30                 # technical: look for a new checkpoint this often (PARAM_AUDIT 11.17)
+PACK_SETTLE_S = 20               # technical: pack once the checkpoint files have been still this long
+NET_TIMEOUT_S = 900               # technical: give up and retry a hung apt-get or git clone (PARAM_AUDIT 11.17)
 WATCH_S = 60                       # technical: how often the statistics are read for the fast phase (PARAM_AUDIT 11.17)
 FC_V0_MM_YR, FC_EXPONENT, FC_MAX_FACTOR = 1.0, 1.0, 2.0     # M1 (technical)
 PLUGIN = "/tmp/aspect-plugin/libaspect_force_controlled.so"
@@ -417,6 +420,29 @@ def _aspect(wall_h):
                timeout=int(os.environ.get("ASPECT_KILL_AFTER_S") or wall_h * 3600 + KILL_GRACE_S))   # test: force the hard stop
 
 
+
+def pack_restart():
+    """The latest checkpoint into results/, written whole and then renamed, so a kill never leaves half a zip."""
+    t = time.time()
+    with zipfile.ZipFile(f"results/{TAG}_restart.zip.part", "w", zipfile.ZIP_DEFLATED) as z:
+        for f in glob.glob(f"{OUT}/restart*") + [f"{OUT}/statistics", f"{OUT}/log.txt"]:
+            if os.path.isfile(f):
+                z.write(f, os.path.basename(f))
+    os.replace(f"results/{TAG}_restart.zip.part", f"results/{TAG}_restart.zip")
+    return time.time() - t
+
+
+def pack_each_checkpoint(stop):
+    """Pack every new checkpoint while ASPECT runs: Kaggle stops the whole machine without warning (TPU idle 2 h,
+    si2d-tpu1 2026-11-24) and keeps only the files already in the output folder."""
+    seen = None
+    while not stop.wait(PACK_POLL_S):
+        m = max((os.path.getmtime(f) for f in glob.glob(f"{OUT}/restart*")), default=None)
+        if m is not None and m != seen and time.time() - m > PACK_SETTLE_S:
+            print(f"checkpoint packed in {pack_restart():.1f} s", flush=True)
+            seen = m
+
+
 os.makedirs(OUT, exist_ok=True)
 t0 = time.time()
 RH = rheology()
@@ -434,9 +460,9 @@ if os.environ.get("ASPECT_INPUTS_ONLY") == "1":          # local check of the in
     raise SystemExit
 run("lscpu | grep -E '^CPU\\(s\\)|Model name'; free -g")
 SUDO = "sudo " if os.geteuid() != 0 else ""          # GitHub runs as a user, Kaggle as root without sudo
-run(f"{SUDO}apt-get update -qq && {SUDO}DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libdeal.ii-dev cmake "
-    "ninja-build 2>&1 | tail -3")
-run(f"git clone -q --depth 1 --branch v3.0.0 https://github.com/geodynamics/aspect.git {A}")
+run(f"set -o pipefail; for i in 1 2; do {SUDO}timeout -k 30 {NET_TIMEOUT_S} apt-get update -qq && {SUDO}DEBIAN_FRONTEND=noninteractive timeout -k 30 {NET_TIMEOUT_S} apt-get install -y -qq libdeal.ii-dev cmake "
+    "ninja-build 2>&1 | tail -3 && break; done")
+run(f"timeout -k 30 {NET_TIMEOUT_S} git clone -q --depth 1 --branch v3.0.0 https://github.com/geodynamics/aspect.git {A}")
 run(f"cmake -S {A} -B {B} -G Ninja -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -3")
 _, _, res["build_s"] = run(f"ninja -C {B} -j 4 2>&1 | tail -3")
 os.makedirs(os.path.dirname(PLUGIN), exist_ok=True)
@@ -452,6 +478,9 @@ if so and so[0] != PLUGIN:
 EXE = f"{B}/aspect-release" if os.path.exists(f"{B}/aspect-release") else f"{B}/aspect"
 pieces = [(SMOKE_WALL_H, resume), (SMOKE_WALL_H, True)] if SMOKE else [(WALL_H, resume)]
 res["pieces"] = []
+packer = threading.Event()
+packer_t = threading.Thread(target=pack_each_checkpoint, args=(packer,), daemon=True)
+packer_t.start()
 json.dump(res, open(f"results/{TAG}_run.json", "w"), indent=1)   # read by cloud/github/rescue.py if the job is cut
 for wall_h, rs in pieces:
     code, _, s = aspect(RH, END_MYR * 1e6, wall_h, rs)
@@ -460,6 +489,8 @@ for wall_h, rs in pieces:
     res["pieces"].append({"exit": str(code), "run_s": round(s), "last_step": int(steps[-1][0]) if steps else None,
                           "model_yr": float(steps[-1][1]) if steps else None})
     json.dump(res, open(f"results/{TAG}_run.json", "w"), indent=1)
+packer.set()
+packer_t.join()                  # a packing in progress finishes first
 cells = re.findall(r"Number of active cells: ([\d,]+)", log)
 dofs = re.findall(r"Number of degrees of freedom: ([\d,]+)", log)
 res.update(cells=cells[-1] if cells else None, dofs=dofs[-1] if dofs else None)
@@ -468,10 +499,7 @@ shutil.copy(f"{D}/out.txt", f"results/{TAG}_out.txt")
 for f in ("statistics", "log.txt"):
     if os.path.exists(f"{OUT}/{f}"):
         shutil.copy(f"{OUT}/{f}", f"results/{TAG}_{f}")
-with zipfile.ZipFile(f"results/{TAG}_restart.zip", "w", zipfile.ZIP_DEFLATED) as z:
-    for f in glob.glob(f"{OUT}/restart*") + [f"{OUT}/statistics", f"{OUT}/log.txt"]:
-        if os.path.isfile(f):
-            z.write(f, os.path.basename(f))
+pack_restart()
 with zipfile.ZipFile(f"results/{TAG}_viz.zip", "w", zipfile.ZIP_DEFLATED) as z:
     for f in glob.glob(f"{OUT}/solution/*") + glob.glob(f"{OUT}/solution.pvd"):
         z.write(f, os.path.relpath(f, OUT))
