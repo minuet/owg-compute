@@ -4,7 +4,8 @@ Called by cloud/github/chain.yml when a run of run.yml completes, or by hand for
 Usage: python chain.py <unpacked results dir> <run title> <run id> [dry|smoke]
   dry: only print the decision; smoke: also continue smoke runs (to test the chain itself).
 Continues only when it is not a smoke run, every ASPECT piece exited 0 (stopped at the end time or at the wall clock
-with a checkpoint; a crash is never continued), the segment limit is not reached, and the verdict is open:
+with a checkpoint, or killed after it with the half-hourly checkpoint;
+a crash is never continued), the segment limit is not reached, and the verdict is open:
   - tools/aspect_brune.py (M1): tools/diag/brune_m1_eval.py says UNDECIDED; at most one continuation (title without
     "-s2"); new end time T_PAPER * TOL for 9.0 and 8.6 TN/m, T_FAIL for 8.0 (PARAM_AUDIT 11.15);
   - tools/aspect_rift2d.py: tools/diag/rift2d_eval.py says UNDECIDED; segments up to MAX_SEGMENTS; same variables
@@ -31,7 +32,7 @@ m = re.search(r"-s(\d+)$", title)
 seg, base = (int(m.group(1)), title[:m.start()]) if m else (1, title)
 why = ("no ASPECT run" if not run.get("pieces") else
        "smoke run" if run["smoke"] and mode != "smoke" else
-       "an ASPECT piece failed" if any(p["exit"] != "0" for p in run["pieces"]) else
+       "an ASPECT piece failed" if any(p["exit"] not in ("0", "timeout") for p in run["pieces"]) else
        "end time reached" if si2d and run["pieces"][-1]["model_yr"] >= run["end_myr"] * 1e6 * (1 - 1e-6) else
        "segment limit reached" if not si2d and seg >= (MAX_SEGMENTS if rift2d else 2) else "")
 if not why:

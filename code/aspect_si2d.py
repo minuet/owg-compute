@@ -25,7 +25,7 @@ ASPECT_RESTART, ASPECT_BUILD (all: build and run; only: build and stop; skip: us
 tools/si2d_batch.py does to run several cases at once on one large machine).
 Output: results/<tag>_{run.json,out.txt,statistics,point_values.txt,log.txt,restart.zip,viz.zip}
 All numbers: PARAM_AUDIT 11.19."""
-import glob, json, math, os, re, shutil, subprocess, sys, time, zipfile
+import glob, json, math, os, re, shutil, signal, subprocess, sys, time, zipfile
 import numpy as np
 from scipy.special import erf
 
@@ -35,6 +35,7 @@ AO = float(os.environ.get("SI_AO", "49"))
 TF = os.environ.get("SI_TF", "none")
 END_MYR = float(os.environ.get("ASPECT_END_MYR", "5"))
 WALL_H = float(os.environ.get("ASPECT_WALL_H", "5.3"))
+KILL_GRACE_S = 600                 # technical: hard stop this long after WALL_H, so packing and upload fit (PARAM_AUDIT 11.17)
 SMOKE = os.environ.get("ASPECT_SMOKE") == "1"
 SMOKE_WALL_H = 0.1                 # technical: each smoke piece stops after 6 min (as aspect_rift2d.py)
 TAG = f"si2d_ay{AY:g}_ao{AO:g}_tf{TF}"
@@ -81,11 +82,13 @@ res = {"script": "aspect_si2d.py", "age_young_myr": AY, "age_old_myr": AO, "tf":
 def run(cmd, cwd="/tmp", timeout=None):
     t = time.time()
     print(f"$ {cmd[:150]}", flush=True)
+    p = subprocess.Popen(["bash", "-c", cmd], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                         start_new_session=True)
     try:
-        r = subprocess.run(["bash", "-c", cmd], cwd=cwd, capture_output=True, text=True, timeout=timeout)
-        out, code = r.stdout + r.stderr, r.returncode
-    except subprocess.TimeoutExpired as e:
-        out, code = (e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")), "timeout"
+        out, code = p.communicate(timeout=timeout)[0], p.returncode
+    except subprocess.TimeoutExpired:      # kill the whole group: mpirun's ranks keep the pipe open (r2d s6, 2026-11-23)
+        os.killpg(p.pid, signal.SIGKILL)
+        out, code = p.communicate()[0], "timeout"
     print(out[-3000:], f"\n[exit {code}, {time.time() - t:.0f} s]", flush=True)
     return code, out, time.time() - t
 
@@ -304,7 +307,7 @@ end
 def _aspect(wall_h):
     return run(f"export OMP_NUM_THREADS=1 OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1; $(ls /usr/bin/mpirun.openmpi 2>/dev/null || echo mpirun) --use-hwthread-cpus --bind-to none "
                f"-np {NP} {EXE} si2d.prm >> out.txt 2>&1; e=$?; tail -15 out.txt; exit $e", cwd=D,
-               timeout=int(wall_h * 3600 + 1200))
+               timeout=int(wall_h * 3600 + KILL_GRACE_S))
 
 
 os.makedirs(OUT, exist_ok=True)

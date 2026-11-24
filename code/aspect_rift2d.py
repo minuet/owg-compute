@@ -21,7 +21,7 @@ until tools/diag/rift2d_eval.py has a verdict).
 Env: R2D_Q (mW/m2), R2D_ZC, R2D_ZM (km), R2D_F (TN/m), ASPECT_END_MYR, ASPECT_WALL_H, ASPECT_SMOKE, ASPECT_INPUTS_ONLY,
 ASPECT_RESTART (restart file, default restart.zip).
 Output: results/<tag>_{run.json,out.txt,statistics,log.txt,restart.zip,viz.zip}"""
-import glob, json, math, os, re, shutil, subprocess, sys, threading, time, zipfile
+import glob, json, math, os, re, shutil, signal, subprocess, sys, threading, time, zipfile
 import numpy as np
 from scipy.sparse import coo_matrix
 from scipy.sparse.linalg import spsolve
@@ -37,6 +37,7 @@ ZM_KM = float(os.environ.get("R2D_ZM", "113"))
 F = float(os.environ.get("R2D_F", "2.0"))                # TN/m
 END_MYR = float(os.environ.get("ASPECT_END_MYR", "30"))
 WALL_H = float(os.environ.get("ASPECT_WALL_H", "5.3"))
+KILL_GRACE_S = 600                 # technical: hard stop this long after WALL_H, so packing and upload fit (PARAM_AUDIT 11.17)
 SMOKE = os.environ.get("ASPECT_SMOKE") == "1"
 SMOKE_WALL_H = 0.1                 # technical: each smoke piece stops after 6 min
 TAG = f"r2d_q{Q:g}_zc{ZC_KM:g}_zm{ZM_KM:g}_F{F:g}"
@@ -75,11 +76,13 @@ res = {"script": "aspect_rift2d.py", "F_TN_m": F, "q_mW": Q, "zc_km": ZC_KM, "zm
 def run(cmd, cwd="/tmp", timeout=None):
     t = time.time()
     print(f"$ {cmd[:150]}", flush=True)
+    p = subprocess.Popen(["bash", "-c", cmd], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                         start_new_session=True)
     try:
-        r = subprocess.run(["bash", "-c", cmd], cwd=cwd, capture_output=True, text=True, timeout=timeout)
-        out, code = r.stdout + r.stderr, r.returncode
-    except subprocess.TimeoutExpired as e:
-        out, code = (e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")), "timeout"
+        out, code = p.communicate(timeout=timeout)[0], p.returncode
+    except subprocess.TimeoutExpired:      # kill the whole group: mpirun's ranks keep the pipe open (r2d s6, 2026-11-23)
+        os.killpg(p.pid, signal.SIGKILL)
+        out, code = p.communicate()[0], "timeout"
     print(out[-3000:], f"\n[exit {code}, {time.time() - t:.0f} s]", flush=True)
     return code, out, time.time() - t
 
@@ -408,7 +411,7 @@ def aspect(rh, end_yr, wall_h, resume):
 def _aspect(wall_h):
     return run(f"export OMP_NUM_THREADS=1 OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1; $(ls /usr/bin/mpirun.openmpi 2>/dev/null || echo mpirun) --use-hwthread-cpus "
                f"-np 4 {EXE} r2d.prm >> out.txt 2>&1; e=$?; tail -15 out.txt; exit $e", cwd=D,
-               timeout=int(wall_h * 3600 + 1200))
+               timeout=int(wall_h * 3600 + KILL_GRACE_S))
 
 
 os.makedirs(OUT, exist_ok=True)
