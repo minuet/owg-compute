@@ -13,7 +13,8 @@ for p in ("mpirun", "mpirun.openmpi", "prterun", "orterun", "aspect-release", "a
     subprocess.run(["pkill", "-9", "-x", p])
 subprocess.run(["pkill", "-9", "-f", "python runner.py"])
 time.sleep(3)
-left = subprocess.run(["pgrep", "-c", "-x", "aspect-release"], capture_output=True, text=True).stdout.strip() or "0"
+left = str(sum(not x.startswith("Z") for x in subprocess.run(["ps", "-C", "aspect-release", "-o", "stat="],   # Z: dead, not yet reaped
+                                                   capture_output=True, text=True).stdout.split()))
 runs = glob.glob(f"{R}/*_run.json")
 tag = os.path.basename(runs[0])[:-len("_run.json")] if runs else NAME
 files = [f for f in glob.glob(f"{D}/output/restart*") + [f"{D}/output/statistics", f"{D}/output/log.txt"] if os.path.isfile(f)]

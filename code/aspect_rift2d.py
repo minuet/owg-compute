@@ -68,6 +68,7 @@ SMOKE_CHECKPOINT_S = 60          # technical: smoke pieces are killed after minu
 PACK_POLL_S = 30                 # technical: look for a new checkpoint this often (PARAM_AUDIT 11.17)
 PACK_SETTLE_S = 20               # technical: pack once the checkpoint files have been still this long
 NET_TIMEOUT_S = 900               # technical: give up and retry a hung apt-get or git clone (PARAM_AUDIT 11.17)
+KILL_SETTLE_S = 3                # technical: wait after the hard stop before counting what is left, as cloud/github/rescue.py (PARAM_AUDIT 11.17)
 WATCH_S = 60                       # technical: how often the statistics are read for the fast phase (PARAM_AUDIT 11.17)
 FC_V0_MM_YR, FC_EXPONENT, FC_MAX_FACTOR = 1.0, 1.0, 2.0     # M1 (technical)
 PLUGIN = "/tmp/aspect-plugin/libaspect_force_controlled.so"
@@ -86,9 +87,12 @@ def run(cmd, cwd="/tmp", timeout=None):
         out, code = p.communicate(timeout=timeout)[0], p.returncode
     except subprocess.TimeoutExpired:      # kill the whole group: mpirun's ranks keep the pipe open (r2d s6, 2026-11-23)
         os.killpg(p.pid, signal.SIGKILL)
+        subprocess.run(["pkill", "-9", "-s", str(p.pid)])   # Open MPI may put ranks in their own group; the session holds them all
         out, code = p.communicate()[0], "timeout"
-        left = subprocess.run(["pgrep", "-c", "-x", "aspect-release"], capture_output=True, text=True).stdout.strip()
-        out += f"\nprocesses left after the hard stop: {left or 0}\n"
+        time.sleep(KILL_SETTLE_S)
+        st = subprocess.run(["ps", "-C", "aspect-release", "-o", "stat="], capture_output=True, text=True).stdout.split()
+        out += (f"\naspect processes on this machine after the hard stop (other cases of a batch included): {sum(not x.startswith('Z') for x in st)} running, "   # Z: dead, not yet reaped
+                f"{sum(x.startswith('Z') for x in st)} dead (zombie)\n")
     print(out[-3000:], f"\n[exit {code}, {time.time() - t:.0f} s]", flush=True)
     return code, out, time.time() - t
 
