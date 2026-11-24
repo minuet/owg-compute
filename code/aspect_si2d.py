@@ -72,6 +72,7 @@ EXPENSIVE_STEPS, GMRES_RESTART = 5000, 200   # ASPECT crustal_deformation cookbo
 PV_YR, VIZ_YR = 0.25e6, 0.5e6      # technical: output intervals
 PV_X, PV_Z = (100.0, 300.0, 4.0), (10.0, 100.0, 3.0)   # km: point-value grid (start, end, step), technical
 CHECKPOINT_S = 1800
+SMOKE_CHECKPOINT_S = 60          # technical: smoke pieces are killed after minutes, so the resume test needs earlier checkpoints
 PLUGIN = "/tmp/aspect-plugin/libprescribed_velocity.so"
 
 os.makedirs("results", exist_ok=True)
@@ -89,6 +90,8 @@ def run(cmd, cwd="/tmp", timeout=None):
     except subprocess.TimeoutExpired:      # kill the whole group: mpirun's ranks keep the pipe open (r2d s6, 2026-11-23)
         os.killpg(p.pid, signal.SIGKILL)
         out, code = p.communicate()[0], "timeout"
+        left = subprocess.run(["pgrep", "-c", "-x", "aspect-release"], capture_output=True, text=True).stdout.strip()
+        out += f"\nprocesses left after the hard stop: {left or 0}\n"
     print(out[-3000:], f"\n[exit {code}, {time.time() - t:.0f} s]", flush=True)
     return code, out, time.time() - t
 
@@ -283,7 +286,7 @@ subsection Termination criteria
   set Checkpoint on termination = true
 end
 subsection Checkpointing
-  set Time between checkpoint = {CHECKPOINT_S}
+  set Time between checkpoint = {SMOKE_CHECKPOINT_S if SMOKE else CHECKPOINT_S}
 end
 subsection Postprocess
   set List of postprocessors = point values, velocity statistics, topography, visualization
@@ -307,7 +310,7 @@ end
 def _aspect(wall_h):
     return run(f"export OMP_NUM_THREADS=1 OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1; $(ls /usr/bin/mpirun.openmpi 2>/dev/null || echo mpirun) --use-hwthread-cpus --bind-to none "
                f"-np {NP} {EXE} si2d.prm >> out.txt 2>&1; e=$?; tail -15 out.txt; exit $e", cwd=D,
-               timeout=int(wall_h * 3600 + KILL_GRACE_S))
+               timeout=int(os.environ.get("ASPECT_KILL_AFTER_S") or wall_h * 3600 + KILL_GRACE_S))   # test: force the hard stop
 
 
 os.makedirs(OUT, exist_ok=True)
@@ -348,6 +351,7 @@ if BUILD == "only":
 EXE = f"{B}/aspect-release" if os.path.exists(f"{B}/aspect-release") else f"{B}/aspect"
 pieces = [(SMOKE_WALL_H, resume), (SMOKE_WALL_H, True)] if SMOKE else [(WALL_H, resume)]
 res["pieces"] = []
+json.dump(res, open(f"results/{TAG}_run.json", "w"), indent=1)   # read by cloud/github/rescue.py if the job is cut
 for wall_h, rs in pieces:
     open(f"{D}/si2d.prm", "w").write(prm(END_MYR * 1e6, wall_h, rs))
     code, _, s = _aspect(wall_h)

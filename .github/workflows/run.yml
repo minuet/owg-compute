@@ -7,6 +7,7 @@ on:
       args: {required: true, type: string}     # JSON list, as runner.py reads it
       name: {required: true, type: string}
       restart_from: {required: false, type: string, default: ""}   # run id whose checkpoint to resume (chain.py)
+      step_min: {required: false, type: string, default: "335"}   # tool step limit; tests set it short to try rescue.py
 permissions: {actions: read, contents: read}
 run-name: ${{ inputs.name }}
 jobs:
@@ -33,7 +34,11 @@ jobs:
           gh run download $ID -R $GITHUB_REPOSITORY -n "$T" -D /tmp/rs && unzip -oq "/tmp/rs/$T.zip" '*_restart.zip' -d /tmp/rs
           mv /tmp/rs/*_restart.zip code/restart.zip && ls -l code/restart.zip
       - run: python runner.py
+        timeout-minutes: ${{ fromJSON(inputs.step_min) }}   # technical: 350 minus about 2 min setup, 3 min rescue and upload, 10 spare
         env: {RUN_SCRIPT: "${{ inputs.script }}", RUN_ARGS: "${{ inputs.args }}", RUN_NAME: "${{ inputs.name }}"}
+      - name: Rescue the checkpoint when the tool step was cut (cloud/github/rescue.py)
+        if: always()
+        run: python rescue.py "${{ inputs.name }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with: {name: "${{ inputs.name }}", path: out/, retention-days: 7}
