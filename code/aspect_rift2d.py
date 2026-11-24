@@ -36,7 +36,7 @@ ZC_KM = float(os.environ.get("R2D_ZC", "41"))
 ZM_KM = float(os.environ.get("R2D_ZM", "113"))
 F = float(os.environ.get("R2D_F", "2.0"))                # TN/m
 END_MYR = float(os.environ.get("ASPECT_END_MYR", "30"))
-WALL_H = float(os.environ.get("ASPECT_WALL_H", "4.0"))
+WALL_H = float(os.environ.get("ASPECT_WALL_H", "5.3"))
 KILL_GRACE_S = 600                 # technical: hard stop this long after WALL_H, so packing and upload fit (PARAM_AUDIT 11.17)
 SMOKE = os.environ.get("ASPECT_SMOKE") == "1"
 SMOKE_WALL_H = 0.1                 # technical: each smoke piece stops after 6 min
