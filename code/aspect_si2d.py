@@ -349,7 +349,7 @@ res["inputs"] = {"lith_young_km": lith_km(AY), "lith_old_km": lith_km(AO), "cree
                  "phi0_deg": math.degrees(math.asin(MU0)), "cohesion0_aspect": C0 / math.sqrt(1 - MU0 ** 2)}
 print(json.dumps(res, indent=1), flush=True)
 RESTART = os.environ.get("ASPECT_RESTART", "restart.zip")
-resume = os.path.exists(RESTART)
+resume = os.path.exists(RESTART) and "restart.mesh" in zipfile.ZipFile(RESTART).namelist()   # a zip packed before the first checkpoint holds only logs
 if resume:
     zipfile.ZipFile(RESTART).extractall(OUT)
     res["resumed_from"] = sorted(os.listdir(OUT))
@@ -386,6 +386,7 @@ packer_t = threading.Thread(target=pack_each_checkpoint, args=(packer,), daemon=
 packer_t.start()
 json.dump(res, open(f"results/{TAG}_run.json", "w"), indent=1)   # read by cloud/github/rescue.py if the job is cut
 for wall_h, rs in pieces:
+    rs = rs and os.path.exists(f"{OUT}/restart.mesh")   # a piece stopped before its first checkpoint left nothing to resume (si2d-killtest1)
     open(f"{D}/si2d.prm", "w").write(prm(END_MYR * 1e6, wall_h, rs))
     code, _, s = _aspect(wall_h)
     log = open(f"{D}/out.txt").read()

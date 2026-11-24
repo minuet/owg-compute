@@ -454,7 +454,7 @@ res["inputs"] = write_inputs(RH)
 res["inputs_s"] = round(time.time() - t0, 1)
 print(json.dumps(res, indent=1), flush=True)
 RESTART = os.environ.get("ASPECT_RESTART", "restart.zip")   # Kaggle: a run's own restart file packed into the code
-resume = os.path.exists(RESTART)
+resume = os.path.exists(RESTART) and "restart.mesh" in zipfile.ZipFile(RESTART).namelist()   # a zip packed before the first checkpoint holds only logs
 if resume:
     zipfile.ZipFile(RESTART).extractall(OUT)
     res["resumed_from"] = sorted(os.listdir(OUT))
@@ -487,6 +487,7 @@ packer_t = threading.Thread(target=pack_each_checkpoint, args=(packer,), daemon=
 packer_t.start()
 json.dump(res, open(f"results/{TAG}_run.json", "w"), indent=1)   # read by cloud/github/rescue.py if the job is cut
 for wall_h, rs in pieces:
+    rs = rs and os.path.exists(f"{OUT}/restart.mesh")   # a piece stopped before its first checkpoint left nothing to resume (si2d-killtest1)
     code, _, s = aspect(RH, END_MYR * 1e6, wall_h, rs)
     log = open(f"{D}/out.txt").read()
     steps = re.findall(r"\*\*\* Timestep (\d+):\s+t=([\d.e+-]+) years", log)
