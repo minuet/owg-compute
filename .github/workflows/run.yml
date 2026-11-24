@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - run: pip install -q numpy scipy matplotlib pygplates==1.0.0
+      - name: Fastest Ubuntu mirror first (tools/diag/gh_mirror_probe.py, 2026-11-24)   # the default us-east-2.ec2 mirror gave 55 kB/s in apt-probe-1
+        run: printf 'http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://archive.ubuntu.com/ubuntu/\tpriority:2\nhttps://security.ubuntu.com/ubuntu/\tpriority:3\n' | sudo tee /etc/apt/apt-mirrors.txt
       - name: Intel oneAPI (same pinned packages as shells_earth_flow.shellset_build, which needs root for them)
         if: startsWith(inputs.script, 'shells_')   # only shells_earth_flow and shells_feg_test use it; skipped for ASPECT runs, whose apt mirror can be slow (2026-11-24)
         run: |
