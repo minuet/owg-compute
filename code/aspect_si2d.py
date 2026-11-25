@@ -20,7 +20,8 @@ Transform fault (SI_TF):
 Output: point values of the two crusts on a grid around the fault every 0.25 Myr (tools/diag/si2d_eval.py gives the
 polarity), statistics, visualization every 0.5 Myr.
 Env: SI_AY, SI_AO (Myr), SI_TF, SI_SCHEME (ASPECT nonlinear solver scheme), SI_NEWTON_SWITCH, SI_DAMPER, SI_CELL_KM
-(solver tests), SI_NP (MPI processes, default 4), ASPECT_END_MYR, ASPECT_WALL_H, ASPECT_SMOKE, ASPECT_INPUTS_ONLY,
+(solver tests), SI_NL_TOL, SI_NL_MAX (tolerance test), SI_RESTART_URL (checkpoint to resume, e.g. one from a TPU run,
+put on the compute repo as a release asset), SI_NP (MPI processes, default 4), ASPECT_END_MYR, ASPECT_WALL_H, ASPECT_SMOKE, ASPECT_INPUTS_ONLY,
 ASPECT_RESTART, ASPECT_BUILD (all: build and run; only: build and stop; skip: use the build of an earlier call, as
 tools/si2d_batch.py does to run several cases at once on one large machine).
 Output: results/<tag>_{run.json,out.txt,statistics,point_values.txt,log.txt,restart.zip,viz.zip}
@@ -44,7 +45,7 @@ NEWTON_SWITCH = os.environ.get("SI_NEWTON_SWITCH")   # solver test: Picard until
 DAMPER = os.environ.get("SI_DAMPER")                 # solver test: plastic damper viscosity, Pa s (PARAM_AUDIT 11.20)
 NP = int(os.environ.get("SI_NP", "4"))            # technical: the 4 cores of a GitHub/Kaggle CPU machine (PARAM_AUDIT 11.20)
 BUILD = os.environ.get("ASPECT_BUILD", "all")
-ENV_KEYS = ("SI_AY", "SI_AO", "SI_TF", "SI_SCHEME", "SI_NEWTON_SWITCH", "SI_DAMPER", "SI_CELL_KM", "SI_NP", "ASPECT_END_MYR", "ASPECT_WALL_H")
+ENV_KEYS = ("SI_AY", "SI_AO", "SI_TF", "SI_SCHEME", "SI_NEWTON_SWITCH", "SI_DAMPER", "SI_CELL_KM", "SI_NL_TOL", "SI_NL_MAX", "SI_RESTART_URL", "SI_NP", "ASPECT_END_MYR", "ASPECT_WALL_H")
 
 MYR = 3.15576e13                   # s (Julian year, ASPECT's year_in_seconds)
 R_GAS = 8.31                       # ZZL Table 1
@@ -67,6 +68,8 @@ MU0, C0, C_MIN, EPS_F = 0.3, 44e6, 4.4e6, 0.8  # ZZL Table 1 and reference case
 C_RIGID = 1e12                     # Pa, technical: "no plasticity" in the push block (ASPECT's default yield cap)
 G = 9.81
 DT_MAX_YR = 20e3; CFL = 0.5; NL_TOL, NL_MAX = 1e-4, 100     # as aspect_rift2d.py (Brune M1)
+NL_TOL = float(os.environ.get("SI_NL_TOL", NL_TOL))     # tolerance test (PARAM_AUDIT 11.20)
+NL_MAX = int(os.environ.get("SI_NL_MAX", NL_MAX))
 CHEAP_STEPS = 4000                 # as aspect_rift2d.py (E-1122-03)
 EXPENSIVE_STEPS, GMRES_RESTART = 5000, 200   # ASPECT crustal_deformation cookbook: the default 1000/50 stopped near convergence (PARAM_AUDIT 11.20)
 PV_YR, VIZ_YR = 0.25e6, 0.5e6      # technical: output intervals
@@ -349,6 +352,8 @@ res["inputs"] = {"lith_young_km": lith_km(AY), "lith_old_km": lith_km(AO), "cree
                  "phi0_deg": math.degrees(math.asin(MU0)), "cohesion0_aspect": C0 / math.sqrt(1 - MU0 ** 2)}
 print(json.dumps(res, indent=1), flush=True)
 RESTART = os.environ.get("ASPECT_RESTART", "restart.zip")
+if os.environ.get("SI_RESTART_URL") and not os.path.exists(RESTART):
+    run(f"curl -sSfL --retry 3 -m {NET_TIMEOUT_S} -o {RESTART} {os.environ['SI_RESTART_URL']}", cwd=os.getcwd())
 resume = os.path.exists(RESTART) and "restart.mesh" in zipfile.ZipFile(RESTART).namelist()   # a zip packed before the first checkpoint holds only logs
 if resume:
     zipfile.ZipFile(RESTART).extractall(OUT)
