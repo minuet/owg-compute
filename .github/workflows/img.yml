@@ -9,18 +9,23 @@ on:
       args: {required: true, type: string}     # JSON list, as runner.py reads it
       name: {required: true, type: string}
       image: {required: false, type: string, default: "python:3.12"}   # base image of Kaggle's TPU image (Kaggle/docker-python tpu/config.txt)
+      step_min: {required: false, type: string, default: "340"}   # tool step limit, as run.yml
 permissions: {actions: read, contents: read}
 run-name: ${{ inputs.name }}
 jobs:
   run:
     runs-on: ubuntu-24.04
     container: ${{ inputs.image }}
-    timeout-minutes: 120          # technical: a build-and-smoke test, about 40 min on Kaggle's 4 threads
+    timeout-minutes: 350          # technical: as run.yml; long runs here resume TPU checkpoints, which need the TPU image's deal.II 9.6.2 (2026-11-26)
     steps:
       - uses: actions/checkout@v4
       - run: cat /etc/os-release && pip install -q numpy scipy
       - run: python runner.py
+        timeout-minutes: ${{ fromJSON(inputs.step_min) }}   # as run.yml
         env: {RUN_SCRIPT: "${{ inputs.script }}", RUN_ARGS: "${{ inputs.args }}", RUN_NAME: "${{ inputs.name }}"}
+      - name: Rescue the checkpoint when the tool step was cut (rescue.py, as run.yml)
+        if: always()
+        run: python rescue.py "${{ inputs.name }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with: {name: "${{ inputs.name }}", path: out/, retention-days: 7}
