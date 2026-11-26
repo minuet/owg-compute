@@ -45,7 +45,8 @@ NEWTON_SWITCH = os.environ.get("SI_NEWTON_SWITCH")   # solver test: Picard until
 DAMPER = os.environ.get("SI_DAMPER")                 # solver test: plastic damper viscosity, Pa s (PARAM_AUDIT 11.20)
 NP = int(os.environ.get("SI_NP", "4"))            # technical: the 4 cores of a GitHub/Kaggle CPU machine (PARAM_AUDIT 11.20)
 BUILD = os.environ.get("ASPECT_BUILD", "all")
-ENV_KEYS = ("SI_AY", "SI_AO", "SI_TF", "SI_SCHEME", "SI_NEWTON_SWITCH", "SI_DAMPER", "SI_CELL_KM", "SI_NL_TOL", "SI_NL_MAX", "SI_RESTART_URL", "SI_NP", "ASPECT_END_MYR", "ASPECT_WALL_H")
+ENV_KEYS = ("SI_AY", "SI_AO", "SI_TF", "SI_SCHEME", "SI_NEWTON_SWITCH", "SI_DAMPER", "SI_CELL_KM", "SI_NL_TOL", "SI_NL_MAX", "SI_PV_YR", "SI_RESTART_URL", "SI_NP", "ASPECT_END_MYR", "ASPECT_WALL_H", "ASPECT_DEALII_PPA")
+DEALII_PPA = ("ginggs/deal.ii-9.6.0-backports", "00CEAEC50DDF6D60DA86B6017271D93D1C37B77C")   # ASPECT_DEALII_PPA=1: deal.II 9.6 on Ubuntu 24.04, to resume TPU checkpoints (9.6.2) on Kaggle CPU (9.5.1) (PARAM_AUDIT 11.19)
 
 MYR = 3.15576e13                   # s (Julian year, ASPECT's year_in_seconds)
 R_GAS = 8.31                       # ZZL Table 1
@@ -73,6 +74,7 @@ NL_MAX = int(os.environ.get("SI_NL_MAX", NL_MAX))
 CHEAP_STEPS = 4000                 # as aspect_rift2d.py (E-1122-03)
 EXPENSIVE_STEPS, GMRES_RESTART = 5000, 200   # ASPECT crustal_deformation cookbook: the default 1000/50 stopped near convergence (PARAM_AUDIT 11.20)
 PV_YR, VIZ_YR = 0.25e6, 0.5e6      # technical: output intervals
+PV_YR = float(os.environ.get("SI_PV_YR", PV_YR))   # tolerance test: 0 = point values after every step (PARAM_AUDIT 11.20)
 PV_X, PV_Z = (100.0, 300.0, 4.0), (10.0, 100.0, 3.0)   # km: point-value grid (start, end, step), technical
 CHECKPOINT_S = 1800
 SMOKE_CHECKPOINT_S = 60          # technical: smoke pieces are killed after minutes, so the resume test needs earlier checkpoints
@@ -365,6 +367,10 @@ if os.environ.get("ASPECT_INPUTS_ONLY") == "1":          # local check of the in
 run("lscpu | grep -E '^CPU\\(s\\)|Model name'; free -g")
 if BUILD != "skip":
     SUDO = "sudo " if os.geteuid() != 0 else ""          # GitHub runs as a user, Kaggle as root without sudo
+    if os.environ.get("ASPECT_DEALII_PPA") == "1":
+        run(f"set -o pipefail; {SUDO}mkdir -p /etc/apt/keyrings && timeout -k 30 {NET_TIMEOUT_S} curl -sSfL 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x{DEALII_PPA[1]}' "
+            f"| {SUDO}gpg --dearmor --yes -o /etc/apt/keyrings/dealii-ppa.gpg && echo \"deb [signed-by=/etc/apt/keyrings/dealii-ppa.gpg] "
+            f"https://ppa.launchpadcontent.net/{DEALII_PPA[0]}/ubuntu $(. /etc/os-release; echo $VERSION_CODENAME) main\" | {SUDO}tee /etc/apt/sources.list.d/dealii-ppa.list")
     run(f"set -o pipefail; for i in 1 2; do {SUDO}timeout -k 30 {NET_TIMEOUT_S} apt-get update -qq && {SUDO}DEBIAN_FRONTEND=noninteractive timeout -k 30 {NET_TIMEOUT_S} apt-get install -y -qq libdeal.ii-dev cmake "
         "ninja-build 2>&1 | tail -3 && break; done")
     run(f"timeout -k 30 {NET_TIMEOUT_S} git clone -q --depth 1 --branch v3.0.0 https://github.com/geodynamics/aspect.git {A}")
