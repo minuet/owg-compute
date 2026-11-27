@@ -19,7 +19,7 @@ Transform fault (SI_TF):
            depth-averaged strengths of Pacific fracture zones being 1..10 MPa, around 4.
 Output: point values of the two crusts on a grid around the fault every 0.25 Myr (tools/diag/si2d_eval.py gives the
 polarity), statistics, visualization every 0.5 Myr.
-Env: SI_AY, SI_AO (Myr), SI_TF, SI_SCHEME (ASPECT nonlinear solver scheme), SI_NEWTON_SWITCH, SI_DAMPER, SI_CELL_KM
+Env: SI_AY, SI_AO (Myr), SI_TF, SI_SCHEME (ASPECT nonlinear solver scheme), SI_NEWTON_SWITCH, SI_DAMPER, SI_NOYIELD, SI_CELL_KM
 (solver tests), SI_NL_TOL, SI_NL_MAX (tolerance test), SI_RESTART_URL (checkpoint to resume, e.g. one from a TPU run,
 put on the compute repo as a release asset), SI_NP (MPI processes, default 4), ASPECT_END_MYR, ASPECT_WALL_H, ASPECT_SMOKE, ASPECT_INPUTS_ONLY,
 ASPECT_RESTART, ASPECT_BUILD (all: build and run; only: build and stop; skip: use the build of an earlier call, as
@@ -42,10 +42,11 @@ SMOKE_WALL_H = 0.1                 # technical: each smoke piece stops after 6 m
 TAG = f"si2d_ay{AY:g}_ao{AO:g}_tf{TF}"
 SCHEME = os.environ.get("SI_SCHEME", "single Advection, iterated defect correction Stokes")   # as aspect_rift2d.py; Newton test (PARAM_AUDIT 11.20)
 NEWTON_SWITCH = os.environ.get("SI_NEWTON_SWITCH")   # solver test: Picard until this residual, then Newton (PARAM_AUDIT 11.20)
+NOYIELD = os.environ.get("SI_NOYIELD", "")          # grid diagnosis: "plates" = plate rocks never yield, "all" = nothing yields (E-1127-06)
 DAMPER = os.environ.get("SI_DAMPER")                 # solver test: plastic damper viscosity, Pa s (PARAM_AUDIT 11.20)
 NP = int(os.environ.get("SI_NP", "4"))            # technical: the 4 cores of a GitHub/Kaggle CPU machine (PARAM_AUDIT 11.20)
 BUILD = os.environ.get("ASPECT_BUILD", "all")
-ENV_KEYS = ("SI_AY", "SI_AO", "SI_TF", "SI_SCHEME", "SI_NEWTON_SWITCH", "SI_DAMPER", "SI_CELL_KM", "SI_NL_TOL", "SI_NL_MAX", "SI_PV_YR", "SI_RESTART_URL", "SI_NP", "ASPECT_END_MYR", "ASPECT_WALL_H", "ASPECT_DEALII_PPA")
+ENV_KEYS = ("SI_AY", "SI_AO", "SI_TF", "SI_SCHEME", "SI_NEWTON_SWITCH", "SI_DAMPER", "SI_NOYIELD", "SI_CELL_KM", "SI_NL_TOL", "SI_NL_MAX", "SI_PV_YR", "SI_RESTART_URL", "SI_NP", "ASPECT_END_MYR", "ASPECT_WALL_H", "ASPECT_DEALII_PPA")
 DEALII_PPA = ("ginggs/deal.ii-9.6.0-backports", "00CEAEC50DDF6D60DA86B6017271D93D1C37B77C")   # ASPECT_DEALII_PPA=1: deal.II 9.6 on Ubuntu 24.04, to resume TPU checkpoints (9.6.2) on Kaggle CPU (9.5.1) (PARAM_AUDIT 11.19)
 
 MYR = 3.15576e13                   # s (Julian year, ASPECT's year_in_seconds)
@@ -146,6 +147,9 @@ def prm(end_yr, wall_h, resume):
     rho = (RHO_M, RHO_M, RHO_C, RHO_C, RHO_C, RHO_M, RHO_M, RHO_M)
     phi = (phi0, phi0, phi0, phi0, 0.0, 0.0, 0.0, 0.0)
     coh = (c0, c0, c0, c0, tf_c, tf_c, C_RIGID, C_MIN)
+    if NOYIELD in ("plates", "all"):                     # grid diagnosis: yield cap as in the push block
+        n = 4 if NOYIELD == "plates" else 8
+        phi, coh = (0.0,) * n + phi[n:], (C_RIGID,) * n + coh[n:]
     cw = (C_MIN / c0,) * 4 + (1.0,) * 4             # weakening only for the plate rocks
     fw = (0.0,) * 4 + (1.0,) * 4
     lst = lambda v: ", ".join(f"{a:.6g}" for a in v)
