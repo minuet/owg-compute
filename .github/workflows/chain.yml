@@ -1,8 +1,7 @@
 # Continue a finished brune/r2d/si2dc run from its checkpoint in the cloud (cloud/github/chain.py decides); by hand for tests.
-# Fires only for runs dispatched by hand; later segments are continued by sweep.yml.
+# By hand only (tests, or a run whose in-job step in run.yml failed); run.yml now continues each segment itself, sweep.yml is the backup.
 name: chain
 on:
-  workflow_run: {workflows: [run], types: [completed]}
   workflow_dispatch:
     inputs:
       run_id: {required: true, type: string}
@@ -10,10 +9,9 @@ on:
 permissions: {actions: write, contents: read}               # actions: write to dispatch run.yml
 jobs:
   chain:
-    if: github.event_name == 'workflow_dispatch' || (startsWith(github.event.workflow_run.display_title, 'brune-') || startsWith(github.event.workflow_run.display_title, 'r2d-') || startsWith(github.event.workflow_run.display_title, 'si2dc-'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15           # technical: the job takes about 1 min; stops a hung download
-    env: {GH_TOKEN: "${{ github.token }}", ID: "${{ inputs.run_id || github.event.workflow_run.id }}"}
+    env: {GH_TOKEN: "${{ github.token }}", ID: "${{ inputs.run_id }}"}
     steps:
       - uses: actions/checkout@v4
       - run: pip install -q numpy
